@@ -24,7 +24,11 @@ export function AppProvider({ children }: PropsWithChildren) {
   const [retryAt, setRetryAt] = useState(0);
   const [privacyMode, setPrivacy] = useState(false);
   const [revealedGrades, setRevealedGrades] = useState<Record<string, true>>({});
-  const setPrivacyMode = (enabled: boolean) => { setPrivacy(enabled); setRevealedGrades({}); };
+  const setPrivacyMode = (enabled: boolean) => {
+    setPrivacy(enabled);
+    setRevealedGrades({});
+    void preferences.savePrivacyMode(enabled).then(() => setPreferenceError(false)).catch(() => setPreferenceError(true));
+  };
   const isGradeVisible = (courseId: string) => !privacyMode || revealedGrades[courseId] === true;
   const showGrade = (courseId: string) => {
     if (session.current.credentials &&
@@ -53,8 +57,9 @@ export function AppProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     let mounted = true;
     const activeSession = session.current;
-    void preferences.loadAppearance().then(value => { if (mounted) setAppearance(value); })
-      .catch(() => { if (mounted) setPreferenceError(true); })
+    void Promise.all([preferences.loadAppearance(), preferences.loadPrivacyMode()])
+      .then(([value, privacy]) => { if (mounted) { setAppearance(value); setPrivacy(privacy); } })
+      .catch(() => { if (mounted) { setPrivacy(true); setPreferenceError(true); } })
       .finally(() => { if (mounted) setReady(true); });
     return () => { mounted = false; activeSession.credentials = null; activeSession.generation++; controller.cancel(); };
   }, [controller, preferences]);
