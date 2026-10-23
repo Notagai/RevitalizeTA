@@ -32,7 +32,6 @@ export function createSchoolHandler(options: {
     if (!/^application\/json(?:;|$)/i.test(request.headers.get('content-type') ?? '')) return reply({ error: 'content-type' }, 415);
     // Parse unauthenticated bodies WITHOUT occupying an upstream school request slot.
     // A malicious slow body cannot reserve one of the three school connections.
-    const time = now();
     let admittedToSchool = false;
     const abort = new AbortController(), cancel = () => abort.abort();
     request.signal.addEventListener('abort', cancel, { once: true });
@@ -51,6 +50,7 @@ export function createSchoolHandler(options: {
         const retry = await distributed(body.username, abort.signal);
         if (retry > 0) return reply({ error: 'rate-limited' }, 429, retry);
       }
+      const time = now();
       // Hash with a process-specific salt; never retain or log raw student IDs.
       const accountKey = createHmac('sha256', salt).update(body.username.toLowerCase()).digest('hex');
       for (const [key, value] of accounts) if (value.expires <= time) accounts.delete(key);
