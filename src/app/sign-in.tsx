@@ -41,6 +41,7 @@ export default function SignIn() {
       ].map(field => <View key={field.label} style={{ gap: 5 }}><Text style={{ color: colors.muted, fontSize: 13 }}>{field.label}</Text>
         <TextInput accessibilityLabel={field.label} value={field.value} onChangeText={field.change} editable={!submitting}
           secureTextEntry={field.secure} autoCapitalize="none" autoCorrect={false} maxLength={field.limit}
+          keyboardType={field.label === 'Username' ? 'number-pad' : 'default'}
           autoComplete={field.secure ? 'current-password' : field.label === 'Username' ? 'username' : 'off'}
           style={{ minHeight: 48, borderWidth: 1, borderColor: colors.border, borderRadius: 12, padding: 12, color: colors.text }} />
       </View>)}
