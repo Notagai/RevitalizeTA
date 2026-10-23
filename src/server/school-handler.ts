@@ -30,10 +30,10 @@ export function createSchoolHandler(options: {
     if ((origin !== null && origin !== url.origin) || request.headers.get('sec-fetch-site') === 'cross-site'
       || request.headers.get('x-revitalize-request') !== 'school-login') return reply({ error: 'origin' }, 403);
     if (!/^application\/json(?:;|$)/i.test(request.headers.get('content-type') ?? '')) return reply({ error: 'content-type' }, 415);
+    // Parse unauthenticated bodies WITHOUT occupying an upstream school request slot.
+    // A malicious slow body cannot reserve one of the three school connections.
     const time = now();
-    globalAttempts = globalAttempts.filter(attempt => time - attempt < 60000);
-    if (globalAttempts.length >= 20 || inFlight >= 3) return reply({ error: 'rate-limited' }, 429, 60);
-    globalAttempts.push(time); inFlight++;
+    let admittedToSchool = false;
     const abort = new AbortController(), cancel = () => abort.abort();
     request.signal.addEventListener('abort', cancel, { once: true });
     if (request.signal.aborted) abort.abort();
@@ -62,6 +62,14 @@ export function createSchoolHandler(options: {
       try { account.limiter.claim(); }
       catch { return reply({ error: 'rate-limited' }, 429, Math.max(1, Math.ceil((account.limiter.retryAt - time) / 1000))); }
       account.expires = time + 300000;
+      if (abort.signal.aborted) throw new SyncError('cancelled');
+      // Only structurally valid, account-throttled attempts consume the bounded
+      // outbound budget. This protects the school's service from arbitrary IDs.
+      globalAttempts = globalAttempts.filter(attempt => time - attempt < 60000);
+      if (globalAttempts.length >= 60 || inFlight >= 3) return reply({ error: 'rate-limited' }, 429, 60);
+      globalAttempts.push(time);
+      inFlight++;
+      admittedToSchool = true;
       const snapshot = await abortable((options.fetchGrades ?? fetchSchoolGrades)({ username: body.username, password: body.password }, abort.signal), abort.signal);
       if (abort.signal.aborted) throw new SyncError('cancelled');
       const encoded = JSON.stringify(snapshot);
@@ -70,6 +78,6 @@ export function createSchoolHandler(options: {
     } catch (error) {
       const code = error instanceof SyncError ? error.code : 'unavailable';
       return reply({ error: code }, code === 'auth' ? 401 : code === 'rate-limited' ? 429 : code === 'cancelled' ? 408 : 502, code === 'rate-limited' ? 60 : undefined);
-    } finally { clearTimeout(timer); request.signal.removeEventListener('abort', cancel); inFlight--; }
+    } finally { clearTimeout(timer); request.signal.removeEventListener('abort', cancel); if (admittedToSchool) inFlight--; }
   };
 }
