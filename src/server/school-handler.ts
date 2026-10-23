@@ -19,7 +19,7 @@ export function createSchoolHandler(options: {
 } = {}) {
   const now = options.now ?? Date.now, salt = randomBytes(32);
   const accounts = new Map<string, { limiter: RequestLimiter; expires: number }>();
-  let inFlight = 0, globalAttempts: number[] = [];
+  let inFlight = 0, readingBodies = 0, globalAttempts: number[] = [];
   const production = options.development === false || (options.development === undefined && process.env.NODE_ENV === 'production');
   const distributed = options.distributedClaim === undefined ? (production ? configuredRateLimit() : null) : options.distributedClaim;
   return async (request: Request): Promise<Response> => {
@@ -32,6 +32,8 @@ export function createSchoolHandler(options: {
     if (!/^application\/json(?:;|$)/i.test(request.headers.get('content-type') ?? '')) return reply({ error: 'content-type' }, 415);
     // Parse unauthenticated bodies WITHOUT occupying an upstream school request slot.
     // A malicious slow body cannot reserve one of the three school connections.
+    if (readingBodies >= 32) return reply({ error: 'busy' }, 429, 5);
+    readingBodies++;
     let admittedToSchool = false;
     const abort = new AbortController(), cancel = () => abort.abort();
     request.signal.addEventListener('abort', cancel, { once: true });
@@ -39,8 +41,12 @@ export function createSchoolHandler(options: {
     const timer = setTimeout(cancel, 12000);
     try {
       let body: unknown;
+      // Slow/incomplete unauthenticated bodies are cut off before the longer
+      // upstream deadline. This is not a replacement for edge connection limits.
+      const bodyTimer = setTimeout(cancel, 5000);
       try { body = JSON.parse(await boundedText(request, 2048, abort.signal)); }
       catch { return reply({ error: abort.signal.aborted ? 'cancelled' : 'body' }, abort.signal.aborted ? 408 : 400); }
+      finally { clearTimeout(bodyTimer); readingBodies--; }
       if (!validSchoolCredentials(body) || (body as Record<string, unknown>).consent !== true
         || Object.keys(body).some(key => !['username', 'password', 'consent'].includes(key))) return reply({ error: 'credentials' }, 400);
       // A production deployment must share limits. Missing/unavailable Redis never
