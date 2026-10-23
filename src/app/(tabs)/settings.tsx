@@ -7,7 +7,7 @@ import { useTheme } from '../../ui/theme';
 import { ThemeEditor } from '../../ui/theme-editor';
 
 export default function Settings() {
-  const { theme, setTheme, preferenceError, signedIn, displayName, ready, clear, sync } = useApp();
+  const { theme, setTheme, preferenceError, signedIn, displayName, ready, clear, sync, privacyMode, setPrivacyMode } = useApp();
   const { colors } = useTheme();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -24,6 +24,11 @@ export default function Settings() {
       </> : <Action label="Sign out and clear grade data" destructive disabled={!ready || sync.status === 'deleting'}
         onPress={() => { setResult(null); setConfirmDelete(true); }} />}
       {result === 'deleted' ? <Body>Signed out. Grade data cleared.</Body> : result === 'failed' ? <Body>Some local data could not be removed. Please retry.</Body> : null}
+    </Card>
+    <Card><Heading>Privacy Mode</Heading>
+      <Body muted>When enabled, marks and grade-related details stay hidden until you choose Show for each course or for your overall average. Screenshots remain available. Revealed values reset when you sign out or switch modes.</Body>
+      <Action label={privacyMode ? 'Turn Privacy Mode off' : 'Turn Privacy Mode on'}
+        selected={privacyMode} onPress={() => setPrivacyMode(!privacyMode)} />
     </Card>
     <Card><Heading>Appearance</Heading>
       {preferenceError ? <Body>Appearance could not be saved. Choose it again to retry.</Body> : null}
