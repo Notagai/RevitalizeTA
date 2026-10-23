@@ -22,6 +22,16 @@ export function AppProvider({ children }: PropsWithChildren) {
   const [signedIn, setSignedIn] = useState(false);
   const [courseWeights, setCourseWeights] = useState<Record<string, number>>({});
   const [retryAt, setRetryAt] = useState(0);
+  const [privacyMode, setPrivacy] = useState(false);
+  const [revealedGrades, setRevealedGrades] = useState<Record<string, true>>({});
+  const setPrivacyMode = (enabled: boolean) => { setPrivacy(enabled); setRevealedGrades({}); };
+  const isGradeVisible = (courseId: string) => !privacyMode || revealedGrades[courseId] === true;
+  const showGrade = (courseId: string) => {
+    if (session.current.credentials &&
+      (courseId === 'overall' || controller.state.snapshot?.courses.some(course => course.id === courseId))) {
+      setRevealedGrades(current => ({ ...current, [courseId]: true }));
+    }
+  };
   const session = useRef({ credentials: null as Credentials | null, username: '', generation: 0, expiresAt: 0 });
   const signingIn = useRef(false);
   const [preferences] = useState(() => new Preferences(slots));
@@ -30,7 +40,7 @@ export function AppProvider({ children }: PropsWithChildren) {
   const cancel = useCallback(() => { session.current.generation++; controller.cancel(); }, [controller]);
   const clear = useCallback(async (status: 'never' | 'auth' = 'never') => {
     session.current.generation++; session.current.credentials = null; session.current.username = ''; session.current.expiresAt = 0;
-    setSignedIn(false); setDisplayName(''); setCourseWeights({});
+    setSignedIn(false); setDisplayName(''); setCourseWeights({}); setRevealedGrades({});
     const results = await Promise.allSettled([controller.clear(status), new FixtureCache(slots).clear()]);
     return results.every(result => result.status === 'fulfilled' && result.value !== false);
   }, [controller]);
@@ -70,7 +80,7 @@ export function AppProvider({ children }: PropsWithChildren) {
       // A different account must never inherit the preceding account's grades or baseline.
       if (session.current.username !== value.username) {
         session.current.credentials = null; session.current.username = ''; session.current.expiresAt = 0;
-        setSignedIn(false); setDisplayName(''); setCourseWeights({});
+        setSignedIn(false); setDisplayName(''); setCourseWeights({}); setRevealedGrades({});
         if (!await controller.clear()) return false;
       }
       if (generation !== session.current.generation) return false;
@@ -83,11 +93,12 @@ export function AppProvider({ children }: PropsWithChildren) {
       }
       session.current.credentials = { ...value };
       session.current.username = value.username; session.current.expiresAt = Date.now() + 15 * 60000;
-      setSignedIn(true); setDisplayName(name.trim().slice(0, 80)); setCourseWeights({});
+      setSignedIn(true); setDisplayName(name.trim().slice(0, 80)); setCourseWeights({}); setRevealedGrades({});
       return true;
     } finally { signingIn.current = false; }
   }
   return <AppContext.Provider value={{ sync, ready, displayName, signedIn, retryAt, ...appearance,
+    privacyMode, setPrivacyMode, isGradeVisible, showGrade,
     courseWeights, setCourseWeight: (id, weight) => {
       if (Number.isFinite(weight) && weight >= 0 && weight <= 10 && controller.state.snapshot?.courses.some(c => c.id === id)) {
         setCourseWeights(current => ({ ...current, [id]: weight }));
