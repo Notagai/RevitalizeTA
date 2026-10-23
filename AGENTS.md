@@ -39,3 +39,7 @@ Docs: https://docs.expo.dev/eas/index.md
 - If `ios/` and `android/` directories do not exist, they are generated (Continuous Native Generation). Never create or edit them by hand — configure native behavior in `app.json` and config plugins.
 - Expo Go only includes its bundled native modules. After adding a library with native code, the app needs a development build: `npx expo run:ios|android` locally, or `eas build --profile development`.
 - Prefer recommended Expo modules over third-party libraries, and check your available skills before adding dependencies. Docs: https://docs.expo.dev/versions/latest/index.md
+
+## Nightly autonomous work
+
+Follow docs/AGENT_NIGHT_PROMPT.md when running unattended. Integrate the unofficial TA-API via an interchangeable, validated adapter only after reviewing docs/TA_API_INTEGRATION.md. Until the credentials/privacy review is approved, use synthetic fixtures only and make no requests using real student data. Do not deploy, push, merge or access secrets from night runs.
