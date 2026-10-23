@@ -9,6 +9,10 @@ export type AppState = {
   mainColor: string; accentColor: string; setColors: (main: string, accent: string) => void;
   courseWeights: Readonly<Record<string, number>>; setCourseWeight: (id: string, weight: number) => void;
   preferenceError: boolean; retryAt: number;
+  privacyMode: boolean;
+  setPrivacyMode: (enabled: boolean) => void;
+  isGradeVisible: (courseId: string) => boolean;
+  showGrade: (courseId: string) => void;
   signIn: (credentials: Credentials, name: string, consent: boolean) => Promise<boolean>;
   refresh: () => Promise<void>; cancel: () => void; clear: () => Promise<boolean>;
 };
