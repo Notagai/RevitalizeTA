@@ -45,6 +45,9 @@ export function createSchoolAdapter(credentials: Credentials, limiter: RequestLi
       if (response.status === 401 || response.status === 403) throw new SyncError('auth');
       if (response.status === 429) { limiter.backoff(response.headers.get('retry-after')); throw new SyncError('rate-limited'); }
       if (!response.ok) throw new SyncError('unavailable');
+      // Defense in depth: reject a native implementation that silently returned a
+      // different final URL. Actual prevention still requires on-device redirect tests.
+      if (response.url && response.url !== endpoint) throw new SyncError('partial');
       if (response.redirected || !/^application\/json(?:;|$)/i.test(response.headers.get('content-type') ?? '')) throw new SyncError('partial');
       const snapshot = parseSnapshot(JSON.parse(await boundedText(response, 1024 * 1024, abort.signal)));
       if (snapshot.source !== 'teachassist' || snapshot.comparison !== undefined) throw new SyncError('partial');
