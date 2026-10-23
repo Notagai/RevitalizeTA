@@ -1,11 +1,27 @@
 import { useColorScheme } from 'react-native';
+import { useMemo } from 'react';
 import { useApp } from '../state/AppProvider';
+import { createPalette } from '../core/palette';
 
-const light = { background: '#F2F5F4', card: '#FFFFFF', text: '#152D29', muted: '#4E635E', accent: '#006B57', border: '#BDCEC8', tint: '#DDF2E9', danger: '#9C2D21' };
-const dark = { background: '#101C19', card: '#1B2B26', text: '#F0F7F3', muted: '#B6CAC1', accent: '#88DEC1', border: '#526B60', tint: '#253E33', danger: '#FFB4A8' };
+// Share generated palettes across every label/chart; bound the cache during customization.
+const palettes = new Map<string, ReturnType<typeof createPalette>>();
+function palette(main: string, accent: string, dark: boolean) {
+  const key = `${main}/${accent}/${dark}`;
+  let colors = palettes.get(key);
+  if (!colors) {
+    colors = createPalette(main, accent, dark);
+    if (palettes.size >= 12) palettes.clear();
+    palettes.set(key, colors);
+  }
+  return colors;
+}
+
 export function useTheme() {
   const system = useColorScheme();
-  const { theme } = useApp();
-  const isDark = theme === 'dark' || (theme === 'system' && system === 'dark');
-  return { colors: isDark ? dark : light, isDark };
+  const { theme, mainColor, accentColor, ready } = useApp();
+  // Match the server's first render before applying device and saved preferences.
+  // Otherwise web hydration can leave navigation styled with the wrong palette.
+  const isDark = ready && (theme === 'dark' || (theme === 'system' && system === 'dark'));
+  const colors = useMemo(() => palette(mainColor, accentColor, isDark), [mainColor, accentColor, isDark]);
+  return { colors, isDark };
 }

@@ -1,4 +1,4 @@
-import { fixtureSnapshot } from './fixtures.ts';
+import { timetableFixtureSnapshot } from './fixtures.ts';
 import { SyncError, type Adapter, type Failure } from './sync.ts';
 
 export type Scenario = 'normal' | 'changed' | 'empty' | 'malformed' | Exclude<Failure, 'cancelled' | 'storage'>;
@@ -18,7 +18,7 @@ export function demoAdapter(scenario: Scenario): Adapter {
     });
     if (scenario === 'malformed') return { courses: [] };
     if (scenario === 'offline' || scenario === 'auth' || scenario === 'partial' || scenario === 'rate-limited' || scenario === 'unavailable') throw new SyncError(scenario);
-    const snapshot = fixtureSnapshot(new Date().toISOString(), scenario === 'changed');
+    const snapshot = timetableFixtureSnapshot(new Date().toISOString(), scenario === 'changed');
     return scenario === 'empty' ? { ...snapshot, courses: [] } : snapshot;
   } };
 }

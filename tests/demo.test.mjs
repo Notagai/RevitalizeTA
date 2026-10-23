@@ -16,7 +16,7 @@ test('demo flow: check, no change, change, offline, restart, empty response', as
   const restored = new SyncController(new FixtureCache(slots), () => {}); await restored.hydrate();
   assert.equal(restored.state.status, 'never'); assert.equal(restored.state.snapshot.courses[0].reportedAverage, 87);
   await restored.refresh(demoAdapter('malformed')); assert.equal(restored.state.status, 'partial');
-  assert.equal(restored.state.snapshot.courses.length, 2);
+  assert.equal(restored.state.snapshot.courses.length, 10);
   await restored.refresh(demoAdapter('empty')); assert.equal(restored.state.status, 'changed');
   assert.deepEqual(restored.state.snapshot.courses, []);
 });

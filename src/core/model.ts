@@ -13,6 +13,8 @@ export type Course = {
   code: string;
   name: string;
   term: string;
+  semester?: 1 | 2;
+  period?: number;
   reportedAverage: number | null;
   categories: { id: string; name: string; weight: number }[];
   assessments: Assessment[];
@@ -67,8 +69,12 @@ export function parseSnapshot(value: unknown): Snapshot {
       return { id: text(a.id), name: text(a.name), category, earned, possible, weight: number(a.weight), status };
     });
     unique(assessments);
+    if (c.semester !== undefined && c.semester !== 1 && c.semester !== 2) fail();
+    if (c.period !== undefined && (typeof c.period !== 'number' || !Number.isInteger(c.period) || c.period < 1 || c.period > 5)) fail();
     return {
       id: text(c.id), code: text(c.code), name: text(c.name), term: text(c.term),
+      ...(c.semester === undefined ? {} : { semester: c.semester as 1 | 2 }),
+      ...(c.period === undefined ? {} : { period: c.period as number }),
       reportedAverage: c.reportedAverage === null ? null : number(c.reportedAverage, 0, 100), categories, assessments,
     };
   });

@@ -1,11 +1,45 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseTheme, Preferences } from '../src/core/preferences.ts';
+import { defaultAppearance, parseAppearance, parseTheme, Preferences } from '../src/core/preferences.ts';
 
 test('theme defaults to system and validates saved preferences', () => {
   assert.equal(parseTheme(null), 'system');
   for (const theme of ['system', 'light', 'dark']) assert.equal(parseTheme(JSON.stringify({ version: 1, theme })), theme);
   for (const raw of ['{}', '{', 'null', '{"version":2,"theme":"dark"}', '{"version":1,"theme":"blue"}']) assert.throws(() => parseTheme(raw));
+});
+
+test('saved colors migrate from old preferences, validate, and survive a restart', async () => {
+  assert.deepEqual(parseAppearance(null), defaultAppearance);
+  assert.deepEqual(parseAppearance('{"version":1,"theme":"dark"}'), { ...defaultAppearance, theme: 'dark' });
+  const appearance = { theme: 'light', mainColor: '#205D91', accentColor: '#8FD5EF', liquidGlass: false };
+  let saved = null;
+  const storage = { read: async () => saved, write: async (_, value) => { saved = value; }, remove: async () => {} };
+  await new Preferences(storage).saveAppearance(appearance);
+  assert.deepEqual(await new Preferences(storage).loadAppearance(), appearance);
+  for (const mainColor of ['red', '#1', '', null, 42]) assert.throws(() => parseAppearance(JSON.stringify({ version: 2, ...appearance, mainColor })));
+  assert.throws(() => parseAppearance(JSON.stringify({ version: 2, ...appearance, accentColor: 'invalid' })));
+});
+
+test('rapid theme and color selections persist the final complete palette', async () => {
+  let saved = null;
+  const storage = { read: async () => saved, write: async (_, value) => { await new Promise(resolve => setTimeout(resolve, 5)); saved = value; }, remove: async () => {} };
+  const preferences = new Preferences(storage);
+  const final = { theme: 'dark', mainColor: '#754679', accentColor: '#E7B7E2', liquidGlass: true };
+  await Promise.all([preferences.saveAppearance(defaultAppearance), preferences.saveAppearance(final)]);
+  assert.deepEqual(await preferences.loadAppearance(), final);
+});
+
+test('glass preferences migrate from v2 and persist both toggle states', async () => {
+  const old = { version: 2, theme: 'dark', mainColor: '#006B57', accentColor: '#88DEC1' };
+  assert.equal(parseAppearance(JSON.stringify(old)).liquidGlass, false);
+  let saved = null;
+  const storage = { read: async () => saved, write: async (_, value) => { saved = value; }, remove: async () => {} };
+  for (const liquidGlass of [true, false]) {
+    const preference = { ...defaultAppearance, liquidGlass };
+    await new Preferences(storage).saveAppearance(preference);
+    assert.deepEqual(await new Preferences(storage).loadAppearance(), preference);
+  }
+  for (const liquidGlass of [null, 'true', 1, undefined]) assert.throws(() => parseAppearance(JSON.stringify({ ...old, version: 3, liquidGlass })));
 });
 test('preference writes remain ordered and recover from failed writes', async () => {
   let value = null; let fail = true;

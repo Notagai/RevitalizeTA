@@ -1,19 +1,25 @@
 import { useState } from 'react';
 import { Link } from 'expo-router';
+import { Switch, View } from 'react-native';
 import { useApp, type ThemeChoice } from '../../state/AppProvider';
 import { scenarios } from '../../core/demo';
 import { Action, Body, Card, Heading, Page } from '../../ui/components';
 import { useTheme } from '../../ui/theme';
+import { ThemeEditor } from '../../ui/theme-editor';
 
 export default function Settings() {
-  const { theme, setTheme, preferenceError, scenario, setScenario, sync, ready, clear } = useApp();
+  const { theme, setTheme, liquidGlass, setLiquidGlass, glassEnabled, preferenceError, scenario, setScenario, sync, ready, clear } = useApp();
   const { colors } = useTheme();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleted, setDeleted] = useState(false);
   return <Page><Heading>Make it yours</Heading>
     <Card><Heading>Appearance</Heading><Body muted>Theme is saved on this device.</Body>{preferenceError ? <Body>Theme could not be loaded or saved. Choose a theme to retry. Your current selection still applies to this session.</Body> : null}{(['system', 'light', 'dark'] as ThemeChoice[]).map(choice => <Action key={choice} label={`${choice[0].toUpperCase()}${choice.slice(1)}`} disabled={!ready} selected={choice === theme} onPress={() => setTheme(choice)} />)}</Card>
-    <Card><Heading>Demo check scenario</Heading><Body>Select a synthetic response, then use Check demo data on Dashboard. No network request is made.</Body>
+    <Card><View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}><View style={{ flex: 1, gap: 6 }}><Heading>Liquid glass</Heading><Body muted>Soft glass surfaces for cards and the bottom bar.</Body></View>
+      <Switch accessibilityLabel="Liquid glass" value={liquidGlass} onValueChange={setLiquidGlass} disabled={!ready} trackColor={{ false: colors.border, true: colors.accent }} thumbColor={colors.card} />
+    </View><Body muted>{liquidGlass && !glassEnabled && ready ? 'Your device’s reduced-transparency setting keeps surfaces solid.' : 'Toggle off for solid surfaces. Your choice is saved on this device.'}</Body></Card>
+    <ThemeEditor />
+    <Card><Heading>Demo check scenario</Heading><Body>Select a synthetic response, then tap Refresh in the notice at the top. No network request is made.</Body>
       {scenarios.map(item => <Action key={item.value} label={item.label} selected={scenario === item.value} disabled={sync.status === 'checking'} onPress={() => setScenario(item.value)} />)}
     </Card>
     <Card><Heading>Privacy and integration</Heading><Body>RevitalizeTA is unofficial and is not affiliated with TeachAssist or YRDSB. This build uses invented courses and marks only. It does not accept credentials or connect to school accounts.</Body>

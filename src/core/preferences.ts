@@ -1,11 +1,22 @@
 import type { SlotStorage } from './cache.ts';
+import { DEFAULT_ACCENT, DEFAULT_MAIN, normalizeHex } from './palette.ts';
 
 export type ThemeChoice = 'system' | 'light' | 'dark';
-export function parseTheme(raw: string | null): ThemeChoice {
-  if (raw === null) return 'system';
+export type Appearance = { theme: ThemeChoice; mainColor: string; accentColor: string; liquidGlass: boolean };
+export const defaultAppearance: Appearance = { theme: 'system', mainColor: DEFAULT_MAIN, accentColor: DEFAULT_ACCENT, liquidGlass: false };
+export function parseAppearance(raw: string | null): Appearance {
+  if (raw === null) return { ...defaultAppearance };
   const parsed = JSON.parse(raw);
-  if (parsed.version !== 1 || !['system', 'light', 'dark'].includes(parsed.theme)) throw new Error('PREFERENCES_INVALID');
-  return parsed.theme;
+  if (!parsed || ![1, 2, 3].includes(parsed.version) || !['system', 'light', 'dark'].includes(parsed.theme)) throw new Error('PREFERENCES_INVALID');
+  if (parsed.version === 1) return { ...defaultAppearance, theme: parsed.theme };
+  const mainColor = typeof parsed.mainColor === 'string' ? normalizeHex(parsed.mainColor) : null;
+  const accentColor = typeof parsed.accentColor === 'string' ? normalizeHex(parsed.accentColor) : null;
+  if (!mainColor || !accentColor) throw new Error('PREFERENCES_INVALID');
+  if (parsed.version === 3 && typeof parsed.liquidGlass !== 'boolean') throw new Error('PREFERENCES_INVALID');
+  return { theme: parsed.theme, mainColor, accentColor, liquidGlass: parsed.version === 3 ? parsed.liquidGlass : false };
+}
+export function parseTheme(raw: string | null): ThemeChoice {
+  return parseAppearance(raw).theme;
 }
 /** Serialized writes keep the final selection when a user changes themes quickly. */
 export class Preferences {
@@ -13,8 +24,13 @@ export class Preferences {
   private pending: Promise<void> = Promise.resolve();
   constructor(storage: SlotStorage) { this.storage = storage; }
   async load() { return parseTheme(await this.storage.read('preferences.json')); }
+  async loadAppearance() { return parseAppearance(await this.storage.read('preferences.json')); }
   save(theme: ThemeChoice) {
-    const operation = this.pending.catch(() => {}).then(() => this.storage.write('preferences.json', JSON.stringify({ version: 1, theme })));
+    return this.saveAppearance({ ...defaultAppearance, theme });
+  }
+  saveAppearance(appearance: Appearance) {
+    const validated = parseAppearance(JSON.stringify({ version: 3, ...appearance }));
+    const operation = this.pending.catch(() => {}).then(() => this.storage.write('preferences.json', JSON.stringify({ version: 3, ...validated })));
     this.pending = operation;
     return operation;
   }
