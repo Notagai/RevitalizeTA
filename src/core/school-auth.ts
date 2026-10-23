@@ -18,7 +18,7 @@ export function schoolEndpoint(origin: string | undefined, development = false):
 export function validSchoolCredentials(value: unknown): value is Credentials {
   if (!value || typeof value !== 'object') return false;
   const { username, password } = value as Record<string, unknown>;
-  return typeof username === 'string' && /^[a-zA-Z0-9._@-]{1,100}$/.test(username)
+  return typeof username === 'string' && /^\d{9}$/.test(username)
     && typeof password === 'string' && password.length > 0 && password.length <= 256 && !/[\u0000-\u001F\u007F]/.test(password);
 }
 
