@@ -1,13 +1,13 @@
-# RevitalizeTA unattended Codex instructions
+# RevitalizeTA three-hour unattended single-agent run
 
-Read AGENTS.md, ROADMAP.md and docs/TA_API_INTEGRATION.md.
+You are the ONLY coding agent. Do not spawn, delegate to, or request subagents.
 
-Choose ONE small, safely implementable incomplete task from the early fixture-based milestones. If it is closely connected and low risk, you may complete ONE second task, but no more. Keep scope small. Implement, validate, document and commit only verified work.
+Read AGENTS.md, ROADMAP.md, docs/TA_API_INTEGRATION.md, and inspect the actual app state. Independently work through the unfinished safe tasks, in dependency order. You may work through as many tasks as time and checks permit, rather than stopping after one or two. Prioritize a working Expo/TypeScript UI, synthetic fixtures, validated data models, local cache and error states, accessible navigation, testing, and documentation. Keep design choices cohesive and sensible. Avoid speculative features not on the roadmap.
 
-Use synthetic data only. Do not send credentials, query live TeachAssist or third-party APIs, deploy, publish, push, merge, modify main, touch secrets or run destructive prebuild commands. No npm audit fix --force. Do not introduce extra dependencies without a clear need.
+After each meaningful task: typecheck, lint (if configured), and run relevant tests; fix regressions, commit verified changes on the current codex/night-* branch, and update ROADMAP.md accurately. Keep a concise progress note in the final response. Continue to the next safe independent task without asking for minor creative decisions.
 
-You may spawn at most one focused subagent for a genuinely independent read-only analysis/review. Prefer no subagent on simple tasks. Do not repeatedly explore the whole repository.
+Safety: development must use SYNTHETIC fixtures ONLY. Do not send actual login details or real student information to ta-api.vercel.app, TeachAssist, or any service. The third-party API is only planned pending a privacy/authorization decision. Never read secrets, deploy, push, merge, edit main, or run destructive native prebuilds. Do not use npm audit fix --force. Keep generated files and logs out of commits.
 
-Run TypeScript checks and lint where available plus any relevant tests. Fix failures you caused. If checks fail and cannot reasonably be repaired, leave changes uncommitted and summarize the blocker. Update ROADMAP.md only for fully verified work. Stage only intentional files; avoid generated artifacts. Commit successful tasks with a descriptive message.
+Efficiency: low reasoning, minimal repeated scans, no subagents, no unnecessary dependencies. Prefer focused tests; do not continually rebuild Android when TypeScript checks suffice. If a task is blocked, document the blocker and move to another safe task. Stop when remaining items require external authorization, secret access, user input, or unsafe actions.
 
-End with a concise summary: tasks selected, files changed, validation performed, commit SHA if any, unfinished work and blockers. Never automatically start more cycles.
+The external PowerShell supervisor enforces a maximum runtime of 180 minutes. Finish cleanly before that when practical. This is one Codex invocation, not an automatically restarting loop.
