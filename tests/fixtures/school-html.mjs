@@ -1,4 +1,4 @@
-export const credentials = { username: 'synthetic.user', password: 'a&b=+%#?<> space' };
+export const credentials = { username: '123456789', password: 'a&b=+%#?<> space' };
 export const loginHTML = '<html><form id="loginForm"><input name="password" type="password"></form></html>';
 export const courseHTML = (mark = 85, href = 'viewReport.php?subject_id=123&student_id=456') => `<html><div class="green_border_message"><div><table>
   <tr><td>Course Name</td><td>Block</td><td>Start</td><td>End</td><td>Grade</td></tr>
