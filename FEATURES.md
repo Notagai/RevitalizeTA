@@ -1,0 +1,28 @@
+- [x] Change in average from last time on main grade average, course average.
+- [x] Get rid of useless messy headers and Android-default looking titles. Just logo, Welcome, (logged in name) then overall average below in the circle, aligned to the left, then next to it on the right is:
+    - [x] From _ courses
+    - [x] change from last grade
+    - [x] Refresh info
+- [x] Get rid of the Demo grades up to date/refresh universal bar. It should be replaced by a refresh button at the top of the MAIN page only.
+- [x] In the same card, underneath this, a weighted average using the weights of all courses.
+- [x] Get rid of Courses, Graded, Missing block
+- [x] "Your Timetable" should become Courses: and then a toggle between semester 1 and 2.
+- [x] Add location next to period number and then get rid of the arrow on course cards. E.g. "P3 - Rm. 306"
+- [x] Add teacher data next to the course code on course cards. E.g. "SPH4U - Mr. Doe"
+- [x] Inside the course: Header with course code, teacher, room number. Then a newline and a title/course name (E.g. Advanced Functions). Then a subtitle with Semester x Period x.
+- [x] Get rid of the "Course Details" thing at the top and just make it a back button integrated into the actual page.
+- [x] First card should be the radial average reported grade. Next to it, estimated weighted average. Underneath, and in the same card, a link to a page with the course weighting data of all courses. Auto scroll to the section of the course that it came from. Add a link to this same page in the main page somewhere, and ensure that it goes to the top instead of scrolling somewhere.
+    - [x] This page should have category breakdown for each course. A title, weight, and percentage is all that's needed.
+- [x] Get rid of useless text and disclaimers in the headings that are taking up space.
+- [x] Assessments should become a simple header followed by cards for each assignment, and weight info, then points. Percentage and bar can be the same as it is right now. Sort by date, grade (ungraded goes at the ends), and whatever other sorting needs to be there.
+- [x] Add Lowest grade to Analytics
+- [x] Get rid of Liquid Glass
+- [ ] Have it actually pull grades through TA API and get rid of "demo grades" features; replace with normal features.
+- [x] Rate limit and secure the requests so that there can be no malicious script injection
+
+Implementation notes (2026-10-23, updated for the security/login request):
+
+- The UI, calculation and sorting items above remain implemented. Teacher/date/credit availability depends on the school response; missing values are explicit.
+- School-account login is now implemented using the app server and the official school form. The request for the unofficial TA API is intentionally left unchecked: its insecure credential transport was permanently disabled and replaced. See SEC_FIXES.md for the audit, direct-login implementation, production configuration and validation limits.
+- Production requires the deployed Expo app server and shared Redis limiter; no hosting or Redis resource was provisioned. A real school-account login and native device testing remain unverified. Tests use invented data only.
+- Previous-refresh comparisons, credentials and course weights are session-only. The weighted estimate excludes unavailable and zero-weight entries.

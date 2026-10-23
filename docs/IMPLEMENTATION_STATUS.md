@@ -1,30 +1,25 @@
-# Fixture prototype status
+# Implementation status
 
-All data is synthetic. There is no login form, credential storage, live adapter or request to TeachAssist/TA-API. Permission and privacy gates remain open.
+The UI work in FEATURES.md remains implemented. School login is now enabled through the app server and the official TeachAssist form. The insecure unofficial TA API stays permanently disabled. See [SEC_FIXES.md](../SEC_FIXES.md) for the security review, configuration and remaining limits.
 
-## Data contract
+## Screens and calculations
 
-`src/core/model.ts` defines version 1 of the synthetic snapshot schema. Runtime parsing rejects incomplete records, duplicate identities, invalid marks, unknown categories and invalid category weights. Explicit empty lists and null reported grades are valid. Unknown schema versions fail closed.
+Dashboard has the supplied logo/welcome, grade ring, overall/course changes, weighted estimates, semester course toggle, and shared course-weight page. Course pages contain reported/estimated grades, teacher/room metadata when available, weight links, and virtualized assignment cards with status/date/grade/name/weight controls. Analytics includes the lowest grade. The demo controls, universal refresh banner and glass UI are removed.
 
-Calculated averages use assessment weights within each category, then category percentages. Categories without graded, positive-weight assessments are excluded and remaining category weights are renormalized. Missing, exempt and ungraded marks are excluded, not assigned zero. Calculations are estimates and can differ from a reported average. Extra credit is not supported by this initial schema.
+The overall average uses available reported grades. The weighted estimate combines category-weighted estimates with course credits or explicit weights. Unknown grades and zero-weight entries are excluded. Comparison history is the previous successful refresh in the session.
 
-The sync controller validates before saving and publishes success only after storage succeeds. It preserves the previous snapshot on failures, deduplicates concurrent checks, supports cancellation and bounds an adapter attempt to 15 seconds. There are no automatic retries or background requests. Check times use the device clock, not teacher publication times.
+## School login and security
 
-## Demo UI and storage
+The latest user request authorizes implementing school login, superseding the earlier disabled-login decision. The app posts credentials to /api/school/grades on its own server; that server uses an encoded form POST to the official school, isolated cookies, allowlisted course links, streaming size limits and total deadlines. It never uses the unofficial API as a live transport.
 
-Expo Router provides Dashboard, Analytics and Settings tabs plus course drill-down and missing-route recovery. Screens identify synthetic provenance, saved check time, cache age, reported versus calculated marks and explicit check errors. Pull-to-refresh and the check button share one controller. Settings provides controlled synthetic success/error scenarios and confirmed deletion with explicit deletion failure feedback. The official-site link opens separately; it does not validate fixtures.
+HTTPS is checked by the client before transmitting credentials and by the server. HTTP is limited to development loopback. Explicit authorization is required. The server enforces same-origin JSON/custom-header requests, per-account and global limits, and requires atomic shared Redis limits in production. Production without that configuration fails closed. Sensitive responses are no-store, private and sanitized.
 
-System/light/dark theme preferences persist separately from grade data, with visible preference read/write failures. Touch targets are at least 48 units, body text scales with system settings, headings have accessibility roles, controls expose selected/disabled states and sync announcements use a polite live region. TalkBack, contrast and large-font device validation remain unverified.
+Version 1 remains synthetic; version 2 is the legacy normalized contract; direct-school snapshots are version 3 with source teachassist. The synthetic cache rejects all live sources. Credentials, grades, names, weights and history stay in memory, expire after 15 minutes without a successful refresh, and clear on sign-out/auth rejection. Appearance settings persist separately.
 
-Native storage uses SDK 58 `expo-file-system` in the app document directory. Web uses localStorage with a synthetic namespace. A bounded two-slot journal writes the older/invalid slot, reads it back, and chooses the newest valid generation on restart. An interrupted write can fall back to the prior valid slot; generations do not depend on the device clock. This provides recoverable snapshot commits, not a filesystem durability guarantee. Only synthetic data is supported; this is not an approved sensitive-data store. There is no schema migration from older versions yet; unsupported records fail closed.
+Zod is overridden to 4.6.7. A version/source-checked node-forge backport runs after install and has a cryptographic regression test. Four npm alerts remain because the upstream node-forge release is still affected; they are documented, not suppressed.
 
-Observed diffs describe the most recent check in memory. Long-term history, persistent last-attempt metadata, background refresh, rate-limit retry scheduling, live transport/authentication and sensitive-record protection remain unfinished.
+## Verification and deployment limits
 
-## Verification and environment limitations (2026-10-23)
+Unit/integration tests, lint/typechecking, web/server and Android bundle exports, and browser login tests use only synthetic data. See TESTING.md for recorded results and local screenshots.
 
-- All 25 core, cache, preferences, presentation and integrated fixture-flow tests pass (see `npm test`), including the 15-second deadline and refresh/deletion concurrency regressions. TypeScript passes after regenerating Expo route declarations. The typecheck script regenerates them first so stale declarations from a previously empty app do not produce false route errors.
-- Android production JavaScript/Hermes bundle exported successfully to ignored `.expo/verification-android`. This confirms bundling only, not installation or runtime UI behavior.
-- `npx expo lint` cannot bootstrap missing ESLint dependencies: sandbox network returns `EACCES`. Lint is not verified.
-- Both required ADB checks fail with `Cannot mkdir '\.android': Permission denied`. Emulator launch, UI navigation, screenshots and logcat cannot be verified in this sandbox. No sandbox workaround attempted.
-- Git staging and commit fail with `Unable to create '.git/index.lock': Permission denied`. Changes remain uncommitted on the original `codex/night-20261023-010530` branch; no push, merge or deployment attempted.
-- Real account, native device and official-site comparisons remain gated on authorization.
+No school-account login, authenticated-school HTML capture, native-device interaction, hosting deployment, Redis provisioning, secret access, push or merge was performed. Authenticated layouts and school acceptable-use obligations require authorized verification. Production needs a deployed HTTPS app server, its public origin for native builds and server-only shared limiter configuration.

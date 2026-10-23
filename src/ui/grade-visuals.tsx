@@ -1,8 +1,7 @@
 import { memo, type ReactNode } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { percent } from '../core/presentation';
+import { deltaLabel, percent } from '../core/presentation';
 import { mix } from '../core/palette';
-import { GlassSurface } from './glass-surface';
 import { useTheme } from './theme';
 
 export function Eyebrow({ children, inverse = false }: { children: ReactNode; inverse?: boolean }) {
@@ -37,11 +36,17 @@ export const GradeRing = memo(function GradeRing({ value, inverse = false, label
 
 export function Metric({ value, label, alert = false }: { value: number | string; label: string; alert?: boolean }) {
   const { colors } = useTheme();
-  return <GlassSurface style={[styles.metric, { borderColor: colors.border }]}>
+  return <View style={[styles.metric, { borderColor: colors.border, backgroundColor: colors.card }]}>
     <View style={[styles.dot, { backgroundColor: alert ? colors.danger : colors.accent }]} />
     <Text style={[styles.metricValue, { color: alert ? colors.danger : colors.text }]}>{value}</Text>
     <Text style={[styles.metricLabel, { color: colors.muted }]}>{label}</Text>
-  </GlassSurface>;
+  </View>;
+}
+
+export function GradeDelta({ value, inverse = false }: { value: number | null; inverse?: boolean }) {
+  const { colors } = useTheme();
+  return <Text accessibilityLabel={`${deltaLabel(value)} since previous refresh`} style={{ fontSize: 12, lineHeight: 18, fontWeight: '600',
+    color: inverse ? colors.heroAccent : value !== null && value < -0.05 ? colors.danger : colors.accent }}>{deltaLabel(value)}</Text>;
 }
 
 export function Badge({ label, alert = false }: { label: string; alert?: boolean }) {

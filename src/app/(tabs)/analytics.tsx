@@ -4,7 +4,7 @@ import { useApp } from '../../state/AppProvider';
 import { gradeBands, gradeSummary } from '../../core/grades';
 import { percent, timestamp } from '../../core/presentation';
 import { Body, Card, Heading, Page } from '../../ui/components';
-import { Badge, Eyebrow, GradeBar, Metric } from '../../ui/grade-visuals';
+import { Badge, GradeBar, Metric } from '../../ui/grade-visuals';
 import { useTheme } from '../../ui/theme';
 
 export default function Analytics() {
@@ -13,18 +13,15 @@ export default function Analytics() {
   const courses = sync.snapshot?.courses ?? [];
   const summary = gradeSummary(courses);
   const bands = gradeBands(courses);
-  return <Page>
-    <View style={styles.row}><View style={{ gap: 4 }}><Eyebrow>The bigger picture</Eyebrow><Heading>Understand your grades.</Heading></View></View>
-    <Body muted>A snapshot of your current demo grades. Charts show available reported marks, not historical trends.</Body>
-    {!courses.length ? <Card><Heading>No grades to chart yet</Heading><Body muted>Load demo grades from Dashboard to see course comparisons and grade distribution.</Body><Link href="/" style={[styles.link, { color: colors.accent }]}>Go to Dashboard →</Link></Card> : <>
-      <View style={styles.metrics}><Metric value={summary.average === null ? '—' : percent(summary.average)} label="Reported mean" /><Metric value={summary.pending} label="Awaiting marks" /></View>
-      <Card><Heading>Course comparison</Heading><Body muted>Reported course averages on the same 0–100% scale.</Body>
-        {courses.map(course => <Link key={course.id} href={{ pathname: '/course/[id]', params: { id: course.id } }} asChild><Pressable style={styles.chartLink} accessibilityRole="link" accessibilityLabel={`${course.name}: ${percent(course.reportedAverage)}. Open course breakdown.`}>
-          <View style={{ gap: 10, width: '100%' }}><View style={styles.row}><Text style={{ color: colors.text, fontWeight: '600', fontSize: 14 }}>{course.code}</Text><Text style={{ color: colors.accent, fontWeight: '700', fontSize: 17, fontVariant: ['tabular-nums'] }}>{course.reportedAverage === null ? 'No grade' : percent(course.reportedAverage)}</Text></View><GradeBar value={course.reportedAverage} label={course.name} /></View>
+  return <Page><Heading>Analytics</Heading>
+    {!courses.length ? <Card><Body muted>No grades available yet.</Body><Link href="/" style={[styles.link, { color: colors.accent }]}>Dashboard</Link></Card> : <>
+      <View style={styles.metrics}><Metric value={summary.average === null ? '—' : percent(summary.average)} label="Overall average" /><Metric value={summary.pending} label="Awaiting marks" /></View>
+      <Card><Heading>Course comparison</Heading>
+        {courses.map(course => <Link key={course.id} href={{ pathname: '/course/[id]', params: { id: course.id } }} asChild><Pressable style={styles.chartLink} accessibilityRole="link" accessibilityLabel={`${course.name}: ${percent(course.reportedAverage)}. Open course.`}>
+          <View style={{ gap: 10, width: '100%' }}><View style={styles.row}><Text style={{ color: colors.text, fontWeight: '600', fontSize: 14 }}>{course.code}</Text><Text style={{ color: colors.accent, fontWeight: '700', fontSize: 17 }}>{percent(course.reportedAverage)}</Text></View><GradeBar value={course.reportedAverage} label={course.name} /></View>
         </Pressable></Link>)}
-        <View style={styles.row}><Text style={{ color: colors.muted, fontSize: 11 }}>0%</Text><Text style={{ color: colors.muted, fontSize: 11 }}>50%</Text><Text style={{ color: colors.muted, fontSize: 11 }}>100%</Text></View>
       </Card>
-      <Card><Heading>Grade distribution</Heading><Body muted>{summary.reportedCount} courses with reported grades · {courses.length - summary.reportedCount} without a grade</Body>
+      <Card><Heading>Grade distribution</Heading>
         {bands.map(band => <View key={band.label} accessible accessibilityLabel={`${band.label}: ${band.count} courses`} style={styles.bandRow}>
           <Text style={{ color: colors.muted, fontSize: 12, width: 78 }}>{band.label}</Text>
           <View style={{ flex: 1, height: 22, borderRadius: 6, overflow: 'hidden', backgroundColor: colors.track }}>
@@ -32,19 +29,23 @@ export default function Analytics() {
           </View><Text style={{ color: colors.text, fontSize: 14, fontWeight: '700', minWidth: 20, textAlign: 'right' }}>{band.count}</Text>
         </View>)}
       </Card>
-      {summary.strongest ? <Card><Eyebrow>Highest reported grade</Eyebrow><Heading>{summary.strongest.name}</Heading><View style={styles.row}><Badge label={summary.strongest.code} /><Text style={{ color: colors.accent, fontSize: 30, fontWeight: '700' }}>{percent(summary.strongest.reportedAverage)}</Text></View><Body muted>{summary.reportedCount === 1 ? 'This is the only course with a reported grade so far.' : 'Based on currently available reported course averages.'}</Body></Card> : null}
+      {([{ title: 'Highest grade', course: summary.strongest }, { title: 'Lowest grade', course: summary.lowest }]).map(item => item.course ? <Card key={item.title}>
+        <Heading>{item.title}</Heading><Body>{item.course.name}</Body>
+        <View style={styles.row}><Badge label={item.course.code} /><Text style={{ color: colors.accent, fontSize: 30, fontWeight: '700' }}>{percent(item.course.reportedAverage)}</Text></View>
+      </Card> : null)}
     </>}
-    <Card><Heading>Observed changes</Heading><Body muted>Last verified demo check: {timestamp(sync.snapshot?.checkedAt ?? null)}</Body>
-      {sync.status === 'changed' && sync.changes.length ? sync.changes.map((change, i) => <View key={`${change.courseId}-${i}`} style={[styles.change, { borderLeftColor: colors.accent }]}><Eyebrow>{sync.snapshot?.courses.find(c => c.id === change.courseId)?.code ?? 'Removed course'}</Eyebrow><Body>{change.description}</Body></View>) : <Body>No changes to show for this check. Run a successful demo check to compare saved grades.</Body>}
-      <Body muted>These are changes observed by the app, not teacher entry times. Change details reset on restart; long-term history is not available yet.</Body>
+    <Card><Heading>Recent changes</Heading><Body muted>Last refreshed: {timestamp(sync.snapshot?.checkedAt ?? null)}</Body>
+      {sync.changes.length ? sync.changes.map((change, i) => <View key={`${change.courseId}-${i}`} style={[styles.change, { borderLeftColor: colors.accent }]}>
+        <Text style={{ color: colors.muted, fontSize: 12 }}>{courses.find(c => c.id === change.courseId)?.code ?? 'Removed course'}</Text><Body>{change.description}</Body>
+      </View>) : <Body muted>No changes from the latest refresh.</Body>}
     </Card>
   </Page>;
 }
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' },
   metrics: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
   bandRow: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 30 },
-  chartLink: { paddingVertical: 10, width: '100%' },
-  link: { paddingVertical: 14, fontSize: 15, fontWeight: '600' },
+  chartLink: { paddingVertical: 12, width: '100%', minHeight: 48 },
+  link: { paddingVertical: 14, fontSize: 15, fontWeight: '600', minHeight: 48 },
   change: { borderLeftWidth: 3, paddingLeft: 12, gap: 3, paddingVertical: 4 },
 });

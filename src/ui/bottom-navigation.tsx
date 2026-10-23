@@ -1,7 +1,6 @@
 import type { ComponentProps } from 'react';
 import type { Tabs } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { GlassSurface } from './glass-surface';
 import { NavigationIcon } from './navigation-icon';
 import { useTheme } from './theme';
 
@@ -9,7 +8,7 @@ type BottomTabBarProps = Parameters<NonNullable<ComponentProps<typeof Tabs>['tab
 
 export function BottomNavigation({ state, descriptors, emitter, navigateToTab, insets }: BottomTabBarProps) {
   const { colors } = useTheme();
-  return <GlassSurface style={[styles.bar, { borderTopColor: colors.border, paddingBottom: Math.max(insets.bottom, 8), paddingLeft: Math.max(insets.left, 10), paddingRight: Math.max(insets.right, 10) }]}>
+  return <View style={[styles.bar, { backgroundColor: colors.card, borderTopColor: colors.border, paddingBottom: Math.max(insets.bottom, 8), paddingLeft: Math.max(insets.left, 10), paddingRight: Math.max(insets.right, 10) }]}>
     <View style={styles.row} accessibilityRole="tablist" accessibilityLabel="Main navigation">{state.routes.map((route, index) => {
       const focused = state.index === index;
       const { options } = descriptors[route.key];
@@ -25,7 +24,7 @@ export function BottomNavigation({ state, descriptors, emitter, navigateToTab, i
         <Text style={{ fontSize: 11, lineHeight: 16, fontWeight: focused ? '700' : '500', color }}>{label}</Text>
       </Pressable>;
     })}</View>
-  </GlassSurface>;
+  </View>;
 }
 const styles = StyleSheet.create({
   bar: { paddingTop: 8, borderTopWidth: StyleSheet.hairlineWidth },

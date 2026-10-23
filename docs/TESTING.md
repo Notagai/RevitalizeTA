@@ -1,31 +1,50 @@
-# Fixture verification
+# Verification
 
-Use synthetic demo data only. Never enter actual school credentials, capture private grades or include raw account responses in test output.
+All credentials, grades, HTML and accounts used in automated tests are invented. The public school login form was read without authenticating. No real account was accessed.
 
-## Automated checks
-
-Run `npm run typecheck`, `npm test`, and `npm run lint`. Typechecking regenerates Expo Router declarations before checking. Tests use Node 24's TypeScript stripping without transpilation dependencies. One deadline regression intentionally runs for about 15 seconds.
-
-Tests cover normalized schema validation, intentional empty data, missing marks, duplicate identities, category math, stable-identity diffs, every controller error state, single-flight checks, cancellation, bounded timeouts, disk-write/deletion failures, corrupt/interrupted cache recovery, generation ordering, preference persistence and demo check → failure → restart flows. They do not mount React Native views or prove native filesystem behavior.
-
-To verify Android bundle compilation without a native rebuild:
+## Commands
 
 ```sh
-npx expo export --platform android --output-dir .expo/verification-android
+npm ci
+npm run typecheck
+npm run lint
+npm test
+npx expo export --platform android --platform web --output-dir .expo/security-verification
 ```
 
-## Android manual checklist (not yet executed in the sandbox)
+Use npm.cmd/npx.cmd on Windows if PowerShell blocks script shims. Node 24 runs TypeScript tests without a test transpiler. One deadline test takes about 15 seconds. After dependency upgrades, start Metro with --clear if its module cache is stale.
 
-1. Check `adb devices`, then the selected device's Android version. Confirm the installed package is `com.notagai.revitalizeta`.
-2. Install initially with `npx expo run:android`; for JS-only changes use `npx expo start` with the installed compatible development build. Avoid redundant native builds.
-3. On fresh launch, confirm there are no invented grades until the demo is loaded and no credential prompt is offered.
-4. Check demo data; verify two courses, a visible synthetic source and a checked timestamp. Check again and verify “No grade changes found.”
-5. Open Advanced Functions; verify reported and calculated averages are distinct, category weights appear, and missing/exempt/ungraded marks have separate labels. Open English; verify no assessments and unavailable marks are explicit.
-6. Choose Changed grades in Settings, check again and inspect Analytics. Choose Offline, Session expired and Incomplete response in turn; confirm old data and checked time remain. Last attempt should advance. Check diagnostics for sanitized state codes only.
-7. Choose No courses; verify an intentional empty state. Restore Original grades. Start a check and cancel; verify a terminal cancellation message.
-8. Kill/relaunch the app without a network connection. Confirm saved demo grades appear with their old check time and no fresh-success claim. Repeat after changing the device clock backwards.
-9. Change the theme and restart; verify persistence. Test system theme transitions, TalkBack traversal, maximum font scaling, narrow/wide layouts and touch targets.
-10. Delete local demo grade data and confirm it disappears after restart. Cancelling deletion must preserve it. Theme preferences are separate and are retained.
-11. Inspect sanitized runtime errors with logcat. Record only error codes and reproduction steps; do not attach credential or actual-grade screenshots/logs.
+npm ci runs the version/source-checked node-forge backport. If install scripts were explicitly skipped, run node scripts/patch-security-dependencies.cjs before testing or building.
 
-The current sandbox blocks host ADB before connectivity can be verified. An Android bundle export is not an emulator UI test. See [implementation status](IMPLEMENTATION_STATUS.md) for the recorded blocker.
+## Automated coverage
+
+The current suite contains 61 tests, covering schema/cache recovery, category/credit estimates, grade deltas, assignment grouping/sorting, appearance migration, cancellation/deletion races, official form encoding, request-cookie isolation, unsafe URLs/redirects, body/response bounds, CSRF/origin/TLS checks, production shared-limit configuration and failure, and both dependency regressions.
+
+The direct login integration test exercises the actual client adapter, server handler, school fetch sequence and parser with mocked school HTML. It checks that punctuation survives form encoding and credentials never appear in an upstream URL. A disabled legacy transport cannot be enabled by its old approval override. The Zod regression verifies early collection bounds; the forge regression signs a malformed nested DigestAlgorithm and confirms rejection while valid RSA signatures verify.
+
+## Browser verification (2026-10-23)
+
+Headless Chrome, isolated profile, 390 × 844:
+
+- The password field is masked and account authorization starts unchecked.
+- The Sign in control requires valid input and authorization.
+- A synthetic POST intercepted at the app API returns a version-3 teachassist snapshot, signs in and displays the invented course/grade and display name.
+- Sign-out clears account metadata and course links.
+- A mocked 401 shows the authentication message and leaves the password empty.
+- Canceling an intercepted pending request does not sign in and leaves the password empty.
+- No request reaches the school or unofficial API; all browser credential requests are intercepted.
+- No uncaught browser errors in the completed run.
+
+Local screenshots: .expo/review-shots/security/. Ignored harness: .expo/security-login-review.mjs. It requires a local dev server on localhost:8083 and an isolated Chrome DevTools endpoint on 127.0.0.1:9333, with no added browser dependency.
+
+The actual local API route was also checked with GET and a missing-consent POST: 405 and 400 respectively, both with no-store/private headers. Neither check can reach school authentication.
+
+Earlier feature verification also covered 390/320-pixel layouts, semester filtering, grade changes, assignment sorting/filtering, targeted weight-page scrolling, top navigation from Dashboard, weight overrides and lowest-grade Analytics.
+
+## Audit and production boundary
+
+npm audit after the fixes reports four high alerts, all propagated from node-forge's unreleased upstream advisory. The specific defect is locally backported and regression tested; the audit is not falsely described as clean. See SEC_FIXES.md.
+
+Client exports must exclude the school parser and Redis server credential names. The API server exports separately. Production login requires a configured shared rate limiter and a trusted HTTPS app origin; missing configuration returns 503 and never contacts the school.
+
+No native-device UI test, real school-account login, authenticated-layout comparison, Redis provisioning or deployment was performed. These require authorized validation and hosting configuration, not a fabricated success claim.

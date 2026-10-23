@@ -19,5 +19,5 @@ test('every sync state has explicit copy; restored cache never claims live succe
   for (const status of ['never', 'checking', 'deleting', 'changed', 'unchanged', 'offline', 'auth', 'partial', 'rate-limited', 'unavailable', 'cancelled', 'storage']) {
     assert.ok(syncMessage({ ...initialState, status }).length > 15);
   }
-  assert.match(syncMessage({ ...initialState, snapshot: fixtureSnapshot('2026-10-23T12:00:00.000Z') }), /saved demo/);
+  assert.match(syncMessage({ ...initialState, snapshot: fixtureSnapshot('2026-10-23T12:00:00.000Z') }), /saved grades/);
 });

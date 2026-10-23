@@ -22,6 +22,7 @@ export class FixtureCache implements SnapshotStore {
         const data = JSON.parse(raw);
         if (data.format !== 1 || !Number.isSafeInteger(data.generation) || data.generation < 1) throw new Error('CACHE_FORMAT');
         const record: Record = { format: 1, generation: data.generation, snapshot: parseSnapshot(data.snapshot) };
+        if (record.snapshot.source !== 'synthetic') throw new Error('CACHE_SOURCE');
         return { key, record, corrupt: false };
       } catch { return { key, record: null, corrupt: true }; }
     }));
@@ -35,6 +36,7 @@ export class FixtureCache implements SnapshotStore {
   }
   async save(value: Snapshot) {
     const snapshot = parseSnapshot(value);
+    if (snapshot.source !== 'synthetic') throw new Error('CACHE_SOURCE');
     const records = await this.records();
     const newest = Math.max(0, ...records.map(r => r.record?.generation ?? 0));
     if (newest >= Number.MAX_SAFE_INTEGER) throw new Error('CACHE_GENERATION');

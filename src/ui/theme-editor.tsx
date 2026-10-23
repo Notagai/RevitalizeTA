@@ -29,7 +29,7 @@ function ColorEditor() {
   const valid = !!validMain && !!validAccent;
   const unchanged = validMain === mainColor && validAccent === accentColor;
 
-  return <Card><Heading>Your color palette</Heading><Body muted>Start with forest green, or choose two colors. The app builds matching surfaces, bars, and readable text for light and dark mode.</Body>
+  return <Card><Heading>Colors</Heading>
     <View style={styles.presets}>{presets.map(preset => <Pressable key={preset.name} accessibilityRole="button" accessibilityLabel={`Preview ${preset.name} colors`}
       accessibilityState={{ selected: validMain === preset.main && validAccent === preset.accent, disabled: !ready }} disabled={!ready}
       onPress={() => { setMain(preset.main); setAccent(preset.accent); setApplied(false); }}

@@ -1,0 +1,113 @@
+import { load } from 'cheerio/slim';
+import { normalizeTAResponse } from '../core/ta-api.ts';
+import { parseSnapshot } from '../core/model.ts';
+import { SyncError } from '../core/sync.ts';
+
+const SCHOOL_ORIGIN = 'https://ta.yrdsb.ca';
+const colors: Record<string, string> = { ffffaa: 'KU', c0fea4: 'T', afafff: 'C', ffd490: 'A', eeeeee: 'O', cccccc: 'F', dedede: 'F' };
+const invalid = (): never => { throw new SyncError('partial'); };
+const clean = (text: string) => text.replace(/\s+/g, ' ').trim();
+function document(html: string) {
+  if (html.length > 2 * 1024 * 1024) return invalid();
+  const $ = load(html);
+  $('script,style,iframe,object,embed,template').remove();
+  if (/Invalid Login|Access Denied|Session Expired/i.test($.root().text()) || $('form#loginForm,input[name="password"]').length) throw new SyncError('auth');
+  return $;
+}
+
+/** Only exact school course endpoints; never trust hrefs as fetch destinations. */
+export function schoolCourseURL(href: string): URL {
+  if (href.length > 1000 || /[\\\u0000-\u001F]/.test(href)) return invalid();
+  const url = new URL(href, SCHOOL_ORIGIN + '/live/students/');
+  const permitted = new Set(['subject_id', 'student_id', 'semester_id']);
+  if (url.origin !== SCHOOL_ORIGIN || url.username || url.password || url.hash || url.pathname !== '/live/students/viewReport.php'
+    || !/^\d{1,15}$/.test(url.searchParams.get('subject_id') ?? '')) return invalid();
+  const seen = new Set<string>();
+  for (const [key, value] of url.searchParams) {
+    if (!permitted.has(key) || seen.has(key) || !/^\d{1,15}$/.test(value)) return invalid();
+    seen.add(key);
+  }
+  return url;
+}
+
+export type SchoolCourse = {
+  code: string; name: string; block: string; room: string; start_time: string; end_time: string;
+  overall_mark: number | 'N/A'; isFinal: boolean; isMidterm: boolean; url: URL | null;
+};
+export function parseSchoolCourses(html: string): SchoolCourse[] {
+  const $ = document(html), courses: SchoolCourse[] = [];
+  const tables = $('.green_border_message table').filter((_i, table) => /Course\s*Name/i.test($(table).text()));
+  if (!tables.length) return invalid();
+  let recognizedRows = 0;
+  tables.first().find('tr').each((_index, row) => {
+    const cells = $(row).children('td');
+    const text = clean($(row).text());
+    if (!text || /Course\s*Name/i.test(text) || /No (?:courses|subjects)/i.test(text)) return;
+    if (cells.length < 4) return invalid();
+    recognizedRows++;
+    if (/Dropped\s+on/i.test(text)) return;
+    const title = clean(cells.eq(0).text()).match(/^([^:]+)\s*:\s*(.+)$/);
+    const block = clean(cells.eq(1).text()).match(/Block:\s*P?([1-5])\b/i);
+    const room = clean(cells.eq(1).text()).match(/rm\.\s*([^,;]+)/i)?.[1] ?? 'N/A';
+    const start = clean(cells.eq(2).text()).match(/\d{4}-\d{2}-\d{2}/)?.[0];
+    const end = clean(cells.eq(3).text()).match(/\d{4}-\d{2}-\d{2}/)?.[0];
+    if (!title || !block || !start || !end || courses.length >= 40) return invalid();
+    const markText = clean(cells.eq(4).text());
+    const mark = markText.match(/(?:current\s*mark\s*=|(?:FINAL|MIDTERM)\s*MARK\s*:)\s*(\d+(?:\.\d+)?)\s*%/i);
+    if (!mark && markText && !/^(?:N\/A|Not available|No mark)$/i.test(markText)) return invalid();
+    const href = $(row).find('a[href]').first().attr('href');
+    courses.push({ code: title[1].trim(), name: title[2].trim(), block: block[1], room, start_time: start, end_time: end,
+      overall_mark: mark ? Number(mark[1]) : 'N/A', isFinal: /FINAL/i.test(markText), isMidterm: /MIDTERM/i.test(markText),
+      url: href ? schoolCourseURL(href) : null });
+  });
+  if (!recognizedRows && !/No (?:courses|subjects)/i.test(tables.first().text()) && tables.first().find('tr').length > 1) return invalid();
+  return courses;
+}
+
+export function parseSchoolReport(html: string) {
+  const $ = document(html);
+  const assignments: Record<string, unknown>[] = [];
+  const weight_table: Record<string, { CW: number; W: number; SA: number | null }> = {};
+  let matchedTable = false;
+  $('table[cellpadding="5"] tr').each((_i, row) => {
+    const category = colors[($(row).attr('bgcolor') ?? '').replace('#', '').toLowerCase()];
+    if (!category) return;
+    matchedTable = true;
+    const cells = $(row).children('td').map((_i, cell) => clean($(cell).text())).get();
+    const percentages = cells.slice(1).map(value => value === 'N/A' || value === '' ? null : Number(value.replace('%', '')));
+    // School final rows omit the term weighting column.
+    if (category === 'F' && percentages.length === 2) percentages.unshift(0);
+    if (percentages.length !== 3 || percentages[1] === null || percentages.some(value => value !== null && (!Number.isFinite(value) || value < 0 || value > 100)) || weight_table[category]) return invalid();
+    weight_table[category] = { W: percentages[0] ?? 0, CW: percentages[1], SA: percentages[2] };
+  });
+  $('table[width="100%"] tr').each((_i, row) => {
+    const title = $(row).find('td[rowspan="2"]').first();
+    if (!title.length) return;
+    if (assignments.length >= 2000) return invalid();
+    const assignment: Record<string, unknown> = { name: clean(title.text()) };
+    let components = 0;
+    $(row).children('td[bgcolor]').each((_i, cell) => {
+      const category = colors[($(cell).attr('bgcolor') ?? '').replace('#', '').toLowerCase()];
+      if (!category || !clean($(cell).text())) return;
+      if (!weight_table[category] || assignment[category]) return invalid();
+      const value = clean($(cell).text());
+      const points = value.match(/(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)/);
+      const weight = value.match(/weight\s*=\s*(\d+(?:\.\d+)?)/i);
+      const pending = /not\s*finished|unfinished|ungraded|pending|N\/A/i.test(value);
+      const exempt = /exempt|no\s*mark/i.test(value), missing = /missing/i.test(value);
+      if (!weight || (!points && !pending && !exempt && !missing)) return invalid();
+      assignment[category] = [{ get: pending || exempt || missing ? null : Number(points![1]), total: points ? Number(points[2]) : 0,
+        weight: Number(weight[1]), finished: !pending, exempt, missing }];
+      components++;
+    });
+    if (!components || !assignment.name) return invalid();
+    assignments.push(assignment);
+  });
+  if (!matchedTable && !/No (?:assessments|assignments|marks)/i.test($.root().text())) return invalid();
+  return { assignments, weight_table };
+}
+
+export function schoolSnapshot(courses: (SchoolCourse & ReturnType<typeof parseSchoolReport>)[], checkedAt: string) {
+  const normalized = normalizeTAResponse(courses, checkedAt);
+  return parseSnapshot({ ...normalized, version: 3, source: 'teachassist' });
+}

@@ -1,15 +1,13 @@
-import { type PropsWithChildren } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, type ScrollViewProps } from 'react-native';
+import { type ComponentRef, type PropsWithChildren, type Ref } from 'react';
+import { router } from 'expo-router';
+import { Pressable, ScrollView, StyleSheet, Text, View, type ScrollViewProps } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from './theme';
-import { GlassSurface } from './glass-surface';
-import { SyncNotice } from './sync-notice';
 
-export function Page({ children, ...props }: PropsWithChildren<ScrollViewProps>) {
+export function Page({ children, scrollRef, ...props }: PropsWithChildren<ScrollViewProps & { scrollRef?: Ref<ComponentRef<typeof ScrollView>> }>) {
   const { colors } = useTheme();
-  return <SafeAreaView edges={['bottom', 'left', 'right']} style={{ flex: 1, backgroundColor: colors.background }}>
-    <SyncNotice />
-    <ScrollView keyboardShouldPersistTaps="handled" {...props} contentContainerStyle={[styles.page, props.contentContainerStyle]}>{children}</ScrollView>
+  return <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={{ flex: 1, backgroundColor: colors.background }}>
+    <ScrollView ref={scrollRef} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets {...props} contentContainerStyle={[styles.page, props.contentContainerStyle]}>{children}</ScrollView>
   </SafeAreaView>;
 }
 export function Heading({ children }: PropsWithChildren) {
@@ -22,7 +20,14 @@ export function Body({ children, muted = false }: PropsWithChildren<{ muted?: bo
 }
 export function Card({ children }: PropsWithChildren) {
   const { colors } = useTheme();
-  return <GlassSurface style={[styles.card, { borderColor: colors.border }]}>{children}</GlassSurface>;
+  return <View style={[styles.card, { borderColor: colors.border, backgroundColor: colors.card }]}>{children}</View>;
+}
+export function BackButton() {
+  const { colors } = useTheme();
+  return <Pressable accessibilityRole="button" accessibilityLabel="Go back" onPress={() => router.canGoBack() ? router.back() : router.replace('/')}
+    style={({ pressed }) => ({ alignSelf: 'flex-start', minHeight: 48, minWidth: 64, justifyContent: 'center', opacity: pressed ? 0.6 : 1 })}>
+    <Text style={{ color: colors.accent, fontSize: 16, fontWeight: '600' }}>‹ Back</Text>
+  </Pressable>;
 }
 export function Action({ label, onPress, disabled = false, selected, destructive = false }: {
   label: string; onPress: () => void; disabled?: boolean; selected?: boolean; destructive?: boolean;

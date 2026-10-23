@@ -73,26 +73,32 @@ export class SyncController {
         abort.signal.addEventListener('abort', () => reject(new SyncError('cancelled')), { once: true });
       });
       const raw = await Promise.race([adapter.fetch(abort.signal), deadline]);
+      if (abort.signal.aborted) throw new SyncError('cancelled');
       const parsed = parseSnapshot(raw);
-      const snapshot = { ...parsed, checkedAt: this.now() };
+      const previous = this.state.snapshot;
+      const checkedAt = this.now();
+      const snapshot: Snapshot = { version: parsed.version, source: parsed.source, courses: parsed.courses, checkedAt,
+        ...(previous && previous.source === parsed.source && previous.checkedAt <= checkedAt ? { comparison: { checkedAt: previous.checkedAt,
+          courses: previous.courses.map(({ id, reportedAverage }) => ({ id, reportedAverage })) } } : {}) };
       const changes = diffSnapshots(this.state.snapshot, snapshot);
       try { await this.store.save(snapshot); } catch { throw new SyncError('storage'); }
+      if (abort.signal.aborted) throw new SyncError('cancelled');
       this.publish({ ...this.state, snapshot, changes, status: changes.length ? 'changed' : 'unchanged' });
     } catch (error) {
       this.publish({ ...this.state, status: error instanceof SyncError ? error.code : 'partial', changes: [] });
     } finally { if (timer) clearTimeout(timer); }
   }
   cancel() { this.abort?.abort(); }
-  clear(): Promise<boolean> {
+  clear(status: 'never' | 'auth' = 'never'): Promise<boolean> {
     if (this.deleting) return this.deleting;
-    this.deleting = this.deleteData().finally(() => { this.deleting = null; });
+    this.deleting = this.deleteData(status).finally(() => { this.deleting = null; });
     return this.deleting;
   }
-  private async deleteData() {
+  private async deleteData(status: 'never' | 'auth') {
     this.cancel();
     await this.pending;
     this.publish({ ...this.state, status: 'deleting', changes: [] });
-    try { await this.store.clear(); this.publish({ ...initialState }); return true; }
+    try { await this.store.clear(); this.publish({ ...initialState, status }); return true; }
     catch { this.publish({ ...this.state, status: 'storage' }); return false; }
   }
 }

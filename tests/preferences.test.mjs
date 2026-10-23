@@ -11,7 +11,7 @@ test('theme defaults to system and validates saved preferences', () => {
 test('saved colors migrate from old preferences, validate, and survive a restart', async () => {
   assert.deepEqual(parseAppearance(null), defaultAppearance);
   assert.deepEqual(parseAppearance('{"version":1,"theme":"dark"}'), { ...defaultAppearance, theme: 'dark' });
-  const appearance = { theme: 'light', mainColor: '#205D91', accentColor: '#8FD5EF', liquidGlass: false };
+  const appearance = { theme: 'light', mainColor: '#205D91', accentColor: '#8FD5EF' };
   let saved = null;
   const storage = { read: async () => saved, write: async (_, value) => { saved = value; }, remove: async () => {} };
   await new Preferences(storage).saveAppearance(appearance);
@@ -24,20 +24,22 @@ test('rapid theme and color selections persist the final complete palette', asyn
   let saved = null;
   const storage = { read: async () => saved, write: async (_, value) => { await new Promise(resolve => setTimeout(resolve, 5)); saved = value; }, remove: async () => {} };
   const preferences = new Preferences(storage);
-  const final = { theme: 'dark', mainColor: '#754679', accentColor: '#E7B7E2', liquidGlass: true };
+  const final = { theme: 'dark', mainColor: '#754679', accentColor: '#E7B7E2' };
   await Promise.all([preferences.saveAppearance(defaultAppearance), preferences.saveAppearance(final)]);
   assert.deepEqual(await preferences.loadAppearance(), final);
 });
 
-test('glass preferences migrate from v2 and persist both toggle states', async () => {
+test('legacy glass preferences migrate to solid surfaces without losing colors', async () => {
   const old = { version: 2, theme: 'dark', mainColor: '#006B57', accentColor: '#88DEC1' };
-  assert.equal(parseAppearance(JSON.stringify(old)).liquidGlass, false);
+  assert.equal('liquidGlass' in parseAppearance(JSON.stringify(old)), false);
   let saved = null;
   const storage = { read: async () => saved, write: async (_, value) => { saved = value; }, remove: async () => {} };
   for (const liquidGlass of [true, false]) {
     const preference = { ...defaultAppearance, liquidGlass };
     await new Preferences(storage).saveAppearance(preference);
-    assert.deepEqual(await new Preferences(storage).loadAppearance(), preference);
+    assert.deepEqual(await new Preferences(storage).loadAppearance(), defaultAppearance);
+    assert.equal(JSON.parse(saved).version, 4);
+    assert.equal('liquidGlass' in JSON.parse(saved), false);
   }
   for (const liquidGlass of [null, 'true', 1, undefined]) assert.throws(() => parseAppearance(JSON.stringify({ ...old, version: 3, liquidGlass })));
 });
