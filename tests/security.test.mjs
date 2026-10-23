@@ -66,6 +66,9 @@ test('each school request has isolated cookies and redirects cannot replay crede
 
 test('credentials validation accepts password punctuation unchanged and rejects type confusion/control characters', () => {
   assert.equal(validSchoolCredentials(credentials), true);
+  assert.equal(validSchoolCredentials({ username: '123456789', password: 'longer-password-with-symbols!%' }), true);
+  assert.equal(validSchoolCredentials({ username: 'synthetic.user', password: 'invented' }), false);
+  assert.equal(validSchoolCredentials({ username: '12345678', password: 'invented' }), false);
   for (const value of [null, {}, { ...credentials, password: 123 }, { ...credentials, username: {} }, { ...credentials, password: 'x\u0000y' }]) assert.equal(validSchoolCredentials(value), false);
 });
 
@@ -107,9 +110,9 @@ test('server rate limits a shared account despite forged IPs, bounds global conc
   time = 30000; await handler(request()); assert.equal(calls, 2);
   const releases = [];
   const busy = createSchoolHandler({ fetchGrades: () => new Promise(resolve => releases.push(resolve)) });
-  const checks = [1, 2, 3].map(id => busy(request({ ...credentials, username: `synthetic${id}`, consent: true })));
+  const checks = [1, 2, 3].map(id => busy(request({ ...credentials, username: `12345670${id}`, consent: true })));
   while (releases.length < 3) await new Promise(resolve => setImmediate(resolve));
-  assert.equal((await busy(request({ ...credentials, username: 'another', consent: true }))).status, 429);
+  assert.equal((await busy(request({ ...credentials, username: '123456710', consent: true }))).status, 429);
   releases.forEach(resolve => resolve({ version: 3, source: 'teachassist', checkedAt: new Date().toISOString(), courses: [] }));
   await Promise.all(checks);
 });
@@ -211,4 +214,48 @@ test('patched Zod rejects oversized constrained arrays before visiting their ele
   const plugin = { packageName: 'synthetic', cliExtensions: { commands: [{ name: 'inspect', title: 'Inspect', parameters: [{ name: 'count', type: 'number' }] }] } };
   const { createMCPDevToolsExtensionSchema } = require('../node_modules/expo/node_modules/@expo/cli/build/src/start/server/createMCPDevToolsExtensionSchema.js');
   assert.deepEqual(createMCPDevToolsExtensionSchema(plugin).parse({ command: 'inspect', count: 1 }), { command: 'inspect', count: 1 });
+});
+
+test('invalid usernames do not exhaust legitimate student school-request capacity', async () => {
+  let calls = 0;
+  const snapshot = { version: 3, source: 'teachassist', checkedAt: new Date().toISOString(), courses: [] };
+  const handler = createSchoolHandler({ fetchGrades: async () => { calls++; return snapshot; } });
+  for (let i = 0; i < 30; i++) {
+    const result = await handler(request({ username: 'wrong.account', password: 'bogus', consent: true }));
+    assert.equal(result.status, 400);
+  }
+  assert.equal((await handler(request())).status, 200);
+  assert.equal(calls, 1);
+});
+
+test('slow unauthenticated bodies cannot reserve the three outbound school slots', async () => {
+  const open = [];
+  let calls = 0;
+  const snapshot = { version: 3, source: 'teachassist', checkedAt: new Date().toISOString(), courses: [] };
+  const handler = createSchoolHandler({ fetchGrades: async () => { calls++; return snapshot; } });
+  for (let i = 0; i < 3; i++) {
+    const abort = new AbortController();
+    const stream = new ReadableStream({ start() {} });
+    const hanging = new Request('https://app.example/api/school/grades', {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-revitalize-request': 'school-login' },
+      body: stream, duplex: 'half', signal: abort.signal,
+    });
+    open.push({ abort, pending: handler(hanging) });
+  }
+  assert.equal((await handler(request())).status, 200);
+  assert.equal(calls, 1);
+  for (const item of open) item.abort.abort();
+  await Promise.all(open.map(item => item.pending));
+});
+
+test('unexpected final response URLs cannot publish a successful session', async () => {
+  const adapter = createSchoolAdapter(credentials, new RequestLimiter(), {
+    consent: true, origin: 'https://app.example',
+    fetchImpl: async () => {
+      const response = json({ version: 3, source: 'teachassist', checkedAt: new Date().toISOString(), courses: [] });
+      Object.defineProperty(response, 'url', { value: 'https://unexpected.example/api/school/grades' });
+      return response;
+    },
+  });
+  await assert.rejects(adapter.fetch(signal()), { code: 'partial' });
 });
