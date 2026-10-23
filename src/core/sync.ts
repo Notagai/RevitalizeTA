@@ -1,0 +1,98 @@
+import { parseSnapshot, type Snapshot } from './model.ts';
+
+export type Failure = 'offline' | 'auth' | 'partial' | 'rate-limited' | 'unavailable' | 'cancelled' | 'storage';
+export type SyncStatus = 'never' | 'checking' | 'deleting' | 'changed' | 'unchanged' | Failure;
+export type Change = { courseId: string; description: string };
+export type SyncState = { status: SyncStatus; snapshot: Snapshot | null; lastAttempt: string | null; changes: Change[] };
+export interface SnapshotStore { load(): Promise<unknown>; save(snapshot: Snapshot): Promise<void>; clear(): Promise<void> }
+export interface Adapter { fetch(signal: AbortSignal): Promise<unknown> }
+export class SyncError extends Error {
+  readonly code: Failure;
+  constructor(code: Failure) { super(code); this.code = code; }
+}
+export const initialState: SyncState = { status: 'never', snapshot: null, lastAttempt: null, changes: [] };
+
+function stable(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`;
+  if (value && typeof value === 'object') return JSON.stringify(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => [k, stable(v)]));
+  return JSON.stringify(value);
+}
+export function diffSnapshots(before: Snapshot | null, after: Snapshot): Change[] {
+  if (!before) return after.courses.map(c => ({ courseId: c.id, description: 'Course added' }));
+  const changes: Change[] = [];
+  for (const course of after.courses) {
+    const old = before.courses.find(c => c.id === course.id);
+    if (!old) { changes.push({ courseId: course.id, description: 'Course added' }); continue; }
+    const { assessments: oldAssessments, ...oldDetails } = old;
+    const { assessments, ...details } = course;
+    const normalize = (value: typeof details) => ({ ...value, categories: [...value.categories].sort((a, b) => a.id.localeCompare(b.id)) });
+    if (stable(normalize(oldDetails)) !== stable(normalize(details))) changes.push({ courseId: course.id, description: 'Course details, reported average or category weights changed' });
+    for (const a of assessments) {
+      const previous = oldAssessments.find(item => item.id === a.id);
+      if (!previous || stable(previous) !== stable(a)) changes.push({ courseId: course.id, description: previous ? 'Assessment changed' : 'Assessment added' });
+    }
+    for (const a of oldAssessments) if (!assessments.some(item => item.id === a.id)) changes.push({ courseId: course.id, description: 'Assessment removed' });
+  }
+  for (const c of before.courses) if (!after.courses.some(item => item.id === c.id)) changes.push({ courseId: c.id, description: 'Course removed' });
+  return changes;
+}
+
+/** Single-flight controller. Validate and durably save before publishing success. */
+export class SyncController {
+  state: SyncState = { ...initialState };
+  private pending: Promise<void> | null = null;
+  private deleting: Promise<boolean> | null = null;
+  private abort: AbortController | null = null;
+  private store: SnapshotStore;
+  private notify: (state: SyncState) => void;
+  private now: () => string;
+  constructor(store: SnapshotStore, notify: (state: SyncState) => void, now = () => new Date().toISOString()) {
+    this.store = store; this.notify = notify; this.now = now;
+  }
+  private publish(next: SyncState) { this.state = next; this.notify(next); }
+  async hydrate() {
+    try {
+      const raw = await this.store.load();
+      if (raw !== null) this.publish({ ...initialState, snapshot: parseSnapshot(raw) });
+    } catch { this.publish({ ...initialState, status: 'storage' }); }
+  }
+  refresh(adapter: Adapter): Promise<void> {
+    if (this.deleting) return this.deleting.then(() => {});
+    if (this.pending) return this.pending;
+    const abort = new AbortController();
+    this.abort = abort;
+    this.publish({ ...this.state, status: 'checking', lastAttempt: this.now(), changes: [] });
+    this.pending = this.run(adapter, abort).finally(() => { this.pending = null; this.abort = null; });
+    return this.pending;
+  }
+  private async run(adapter: Adapter, abort: AbortController) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const deadline = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => { reject(new SyncError('unavailable')); abort.abort(); }, 15000);
+        abort.signal.addEventListener('abort', () => reject(new SyncError('cancelled')), { once: true });
+      });
+      const raw = await Promise.race([adapter.fetch(abort.signal), deadline]);
+      const parsed = parseSnapshot(raw);
+      const snapshot = { ...parsed, checkedAt: this.now() };
+      const changes = diffSnapshots(this.state.snapshot, snapshot);
+      try { await this.store.save(snapshot); } catch { throw new SyncError('storage'); }
+      this.publish({ ...this.state, snapshot, changes, status: changes.length ? 'changed' : 'unchanged' });
+    } catch (error) {
+      this.publish({ ...this.state, status: error instanceof SyncError ? error.code : 'partial', changes: [] });
+    } finally { if (timer) clearTimeout(timer); }
+  }
+  cancel() { this.abort?.abort(); }
+  clear(): Promise<boolean> {
+    if (this.deleting) return this.deleting;
+    this.deleting = this.deleteData().finally(() => { this.deleting = null; });
+    return this.deleting;
+  }
+  private async deleteData() {
+    this.cancel();
+    await this.pending;
+    this.publish({ ...this.state, status: 'deleting', changes: [] });
+    try { await this.store.clear(); this.publish({ ...initialState }); return true; }
+    catch { this.publish({ ...this.state, status: 'storage' }); return false; }
+  }
+}

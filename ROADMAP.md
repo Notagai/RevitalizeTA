@@ -2,7 +2,22 @@
 
 > **TeachAssist, without the uncertainty.** A fast, trustworthy, minimal, free and open-source Android grade tracker for YRDSB TeachAssist.
 >
-> **Status:** Planning | **Platform:** Android-first | **Distribution goal:** GitHub APK releases, then Google Play | **Last updated:** 2026-10-21
+> **Status:** Synthetic prototype in progress | **Platform:** Android-first | **Distribution goal:** GitHub APK releases, then Google Play | **Last updated:** 2026-10-23
+
+### Implementation evidence
+
+See [fixture prototype status](docs/IMPLEMENTATION_STATUS.md) for contracts, checks and blockers. Completed fixture work does not satisfy live integration or release gates.
+
+- [x] Synthetic normalized course/assessment/category schema with runtime validation and grade math.
+- [x] Fixture sync controller with atomic save-before-success behavior, explicit failures, cancellation and concurrent-refresh deduplication.
+- [x] Focused Node tests for validation, math, diffs, cache preservation and sync states.
+- [x] Recoverable two-slot on-device synthetic cache with corrupt/interrupted-write regression coverage.
+- [x] Fixture Dashboard, assessment drill-down, three-tab navigation, check/error states and confirmed local demo-data deletion.
+- [x] Persisted system/light/dark preferences with explicit storage failure feedback.
+- [x] Android JavaScript/Hermes bundle export (runtime emulator validation remains outstanding).
+- [ ] Full lint baseline (missing dependencies; sandbox blocks download).
+- [ ] Android UI verification (host ADB blocked by sandbox permissions).
+- [ ] Commit verified work (sandbox denies `.git/index.lock`; changes remain in working tree).
 
 ## Why this exists
 
