@@ -179,6 +179,23 @@ No production service, API contract or third-party library is assumed stable unt
 - [ ] Local-only user personalization and per-course layout controls.
 - [ ] Additional accessibility and performance refinements based on beta feedback.
 
+## Planned TA-API integration (fixture-first)
+
+Reference: https://ta-api.vercel.app/ (unofficial, third-party). Proposed endpoint: POST /api/getCourses. **Do not send real credentials until authorization and security reviews pass.** See [TA-API integration plan](docs/TA_API_INTEGRATION.md).
+
+- [ ] Audit source, deployment, credential handling and API reliability, and confirm permitted integration.
+- [ ] Define runtime-validated data models for documented course fields and synthetic assessment fixtures.
+- [ ] Implement an interchangeable TA-API adapter and exhaustive mock-based tests.
+- [ ] Verify last-checked states, error reporting, and atomic cache updates using synthetic responses.
+- [ ] Consider real-account integration only after an explicit security/authorization decision.
+
+## Nightly Codex milestones
+
+- [x] Add bounded local Codex launcher and nighttime task policy.
+- [ ] Verify Codex CLI installation and ChatGPT sign-in on the development machine.
+- [ ] Run one short fixture-only task and review branch, logs, and results.
+- [ ] Add suitable lint/test scripts and establish a green baseline before extending unattended jobs.
+
 ## Priority backlog
 
 | Priority | Work | Rationale |
