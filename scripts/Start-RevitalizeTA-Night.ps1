@@ -18,10 +18,10 @@ $logDir = Join-Path $Repo '.codex-night-logs'
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 $stdout = Join-Path $logDir "$stamp-output.txt"
 $stderr = Join-Path $logDir "$stamp-progress.txt"
-$prompt = (Get-Content (Join-Path $Repo 'docs/AGENT_NIGHT_PROMPT.md') -Raw) -replace '"', "'"
-$argsList = @('exec', '--sandbox', 'workspace-write', '-m', $Model, '-c', 'model_reasoning_effort="low"', '-c', 'agents.max_concurrent_threads_per_session=1', '-c', 'agents.default_subagent_model="gpt-6-luna"', '-c', 'agents.default_subagent_reasoning_effort="low"', ('"' + $prompt + '"'))
+$promptFile = Join-Path $Repo 'docs/AGENT_NIGHT_PROMPT.md'
+$argsList = @('exec', '--sandbox', 'workspace-write', '-m', $Model, '-c', 'model_reasoning_effort="low"', '-c', 'agents.max_concurrent_threads_per_session=1', '-c', 'agents.default_subagent_model="gpt-6-luna"', '-c', 'agents.default_subagent_reasoning_effort="low"', '-')
 Write-Host "Starting $branch for at most $MaxMinutes minutes."
-$p = Start-Process -FilePath 'codex.cmd' -ArgumentList $argsList -PassThru -NoNewWindow -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+$p = Start-Process -FilePath 'codex.cmd' -ArgumentList $argsList -PassThru -NoNewWindow -RedirectStandardInput $promptFile -RedirectStandardOutput $stdout -RedirectStandardError $stderr
 $timedOut = -not $p.WaitForExit($MaxMinutes * 60000)
 if ($timedOut) { taskkill /PID $p.Id /T /F | Out-Null }
 $p.Refresh()
