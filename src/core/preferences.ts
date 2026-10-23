@@ -23,6 +23,16 @@ export class Preferences {
   private storage: SlotStorage;
   private pending: Promise<void> = Promise.resolve();
   constructor(storage: SlotStorage) { this.storage = storage; }
+  async loadPrivacyMode() {
+    const raw = await this.storage.read('privacy-mode.json');
+    if (raw === null) return false;
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== 'boolean') throw new Error('PRIVACY_INVALID');
+    return parsed;
+  }
+  async savePrivacyMode(enabled: boolean) {
+    await this.storage.write('privacy-mode.json', JSON.stringify(enabled));
+  }
   async load() { return parseTheme(await this.storage.read('preferences.json')); }
   async loadAppearance() { return parseAppearance(await this.storage.read('preferences.json')); }
   save(theme: ThemeChoice) {
