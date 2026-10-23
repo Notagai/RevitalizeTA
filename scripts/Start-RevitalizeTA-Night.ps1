@@ -1,7 +1,6 @@
 param(
   [string]$Repo = 'C:\Dev\RevitalizeTA',
-  [int]$MaxMinutes = 90,
-  [string]$Model = 'gpt-6-luna'
+  [int]$MaxMinutes = 180
 )
 $ErrorActionPreference = 'Stop'
 if ($MaxMinutes -lt 1 -or $MaxMinutes -gt 180) { throw 'MaxMinutes must be 1 to 180.' }
@@ -19,7 +18,7 @@ New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 $stdout = Join-Path $logDir "$stamp-output.txt"
 $stderr = Join-Path $logDir "$stamp-progress.txt"
 $promptFile = Join-Path $Repo 'docs/AGENT_NIGHT_PROMPT.md'
-$argsList = @('exec', '--sandbox', 'workspace-write', '-m', $Model, '-c', 'model_reasoning_effort="low"', '-c', 'agents.max_concurrent_threads_per_session=1', '-c', 'agents.default_subagent_model="gpt-6-luna"', '-c', 'agents.default_subagent_reasoning_effort="low"', '-')
+$argsList = @('exec', '--sandbox', 'workspace-write', '-c', 'model_reasoning_effort="low"', '-')
 Write-Host "Starting $branch for at most $MaxMinutes minutes."
 $p = Start-Process -FilePath 'codex.cmd' -ArgumentList $argsList -PassThru -NoNewWindow -RedirectStandardInput $promptFile -RedirectStandardOutput $stdout -RedirectStandardError $stderr
 $timedOut = -not $p.WaitForExit($MaxMinutes * 60000)
