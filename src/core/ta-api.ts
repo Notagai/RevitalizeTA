@@ -1,3 +1,4 @@
+import { validLevel, type AchievementLevel } from './levels.ts';
 import { parseSnapshot, type Assessment, type Course, type Snapshot } from './model.ts';
 import { SyncError, type Adapter } from './sync.ts';
 
@@ -60,10 +61,15 @@ export function normalizeTAResponse(value: unknown, checkedAt = new Date().toISO
           const part = record(value);
           if (typeof part.finished !== 'boolean') return invalid();
           const possible = numeric(part.total), weight = numeric(part.weight);
+          const level: AchievementLevel | undefined = part.level === undefined ? undefined :
+            source === 'teachassist' && validLevel(part.level) ? part.level : invalid();
           const earned = part.get === null ? null : numeric(part.get, possible);
-          const status: Assessment['status'] = part.exempt === true ? 'exempt' : part.missing === true ? 'missing' : part.finished && earned !== null && possible > 0 ? 'graded' : 'ungraded';
+          if (level !== undefined && (earned !== null || possible !== 0)) return invalid();
+          const status: Assessment['status'] = part.exempt === true ? 'exempt' : part.missing === true ? 'missing' :
+            part.finished && ((earned !== null && possible > 0) || level !== undefined) ? 'graded' : 'ungraded';
           assessments.push({ id: `${assignmentId}:${category}:${index}`, assignmentId, name, category, possible, weight,
-            earned: status === 'graded' ? earned : null, status, ...(assignmentDate ? { date: assignmentDate } : {}) });
+            earned: status === 'graded' ? earned : null, status,
+            ...(level === undefined ? {} : { level }), ...(assignmentDate ? { date: assignmentDate } : {}) });
           parts++;
         }
       }
@@ -79,6 +85,8 @@ export function normalizeTAResponse(value: unknown, checkedAt = new Date().toISO
       ...(raw.teacher ? { teacher: label(raw.teacher) } : {}),
       ...(raw.credit === undefined ? {} : { credit: numeric(raw.credit, 10) }),
       reportedAverage: raw.overall_mark === 'N/A' || raw.overall_mark === null ? null : numeric(raw.overall_mark, 100),
+      ...(raw.overall_level === undefined ? {} : {
+        reportedLevel: source === 'teachassist' && validLevel(raw.overall_level) ? raw.overall_level : invalid() }),
       categories: weights, assessments };
   });
   return parseSnapshot({ version: source === 'teachassist' ? 3 : 2, source, checkedAt, courses: normalized });
