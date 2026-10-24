@@ -180,6 +180,7 @@ export function parseSchoolCourses(html: string): SchoolCourse[] {
 
 export function parseSchoolReport(html: string) {
   const $ = document(html);
+  const reportInvalid = (reason: 'report-cell' | 'report-assignment' | 'report-weighting' | 'report-layout'): never => { throw new SyncError('partial', undefined, reason); };
   const assignments: Record<string, unknown>[] = [];
   const weight_table: Record<string, { CW: number; W: number; SA: number | null }> = {};
   const text = (el: Parameters<ReturnType<typeof load>>[0]) => clean($(el).text());
@@ -221,10 +222,10 @@ export function parseSchoolReport(html: string) {
     const category = colors[($(row).attr('bgcolor') ?? '').replace('#', '').toLowerCase()];
     if (!category) return;
     const cells = $(row).children('td').map((_j, cell) => text(cell)).get();
-    if (cells.length < 3 || cells.length > 5 || weight_table[category]) return invalid();
+    if (cells.length < 3 || cells.length > 5 || weight_table[category]) return reportInvalid('report-weighting');
     const values = cells.slice(1).map(percentValue);
     const allBlank = cells.slice(1).every(value => value === '' || /^N\/A$/i.test(value));
-    if (values.some((v, i) => v === null && !allBlank && !/^N\/A$/i.test(cells[i + 1]) && cells[i + 1] !== '')) return invalid();
+    if (values.some((v, i) => v === null && !allBlank && !/^N\/A$/i.test(cells[i + 1]) && cells[i + 1] !== '')) return reportInvalid('report-weighting');
     if (allBlank) {
       // Zeroes are a sentinel for unpublished category weights. The UI must
       // render "Not published" rather than an invented percentage.
@@ -237,7 +238,7 @@ export function parseSchoolReport(html: string) {
       const maybeFinal = category === 'F' && values.length === 2;
       if (maybeFinal) values.unshift(0);
       const weight = values.length >= 3 ? values[1] : values[0];
-      if (weight === null || weight === undefined) return invalid();
+      if (weight === null || weight === undefined) return reportInvalid('report-weighting');
       weight_table[category] = { W: values[0] ?? 0, CW: weight, SA: values.length >= 3 ? values[2] : null };
     }
   });
@@ -257,7 +258,7 @@ export function parseSchoolReport(html: string) {
       const weighted = percentValue(values[cells.length >= 4 ? 2 : 1]);
       const current = percentValue(values[1]);
       const achievement = percentValue(values[cells.length >= 4 ? 3 : 2]);
-      if (weighted === null || weight_table[category]) return invalid();
+      if (weighted === null || weight_table[category]) return reportInvalid('report-weighting');
       weight_table[category] = { CW: weighted, W: current ?? weighted, SA: achievement };
     });
   }
@@ -277,9 +278,9 @@ export function parseSchoolReport(html: string) {
   $('table[width="100%"] tr').each((_i, row) => {
     const title = $(row).children('td[rowspan]').first();
     if (!title.length) return;
-    if (assignments.length >= 2000) return invalid();
+    if (assignments.length >= 2000) return reportInvalid('report-assignment');
     const name = text(title);
-    if (!name) return invalid();
+    if (!name) return reportInvalid('report-assignment');
     const assignment: Record<string, unknown> = { name };
     let parts = 0;
     $(row).find('td[bgcolor]').each((_j, cell) => {
@@ -293,24 +294,28 @@ export function parseSchoolReport(html: string) {
       const pending = /not\s*finished|unfinished|ungraded|pending|N\/A/i.test(value);
       const exempt = /\bexempt\b|\bno\s+mark\b/i.test(value);
       const missing = /\bmissing\b/i.test(value);
-      if (!points && !pending && !exempt && !missing) return;
-      if (!weight && !noWeight || !weight_table[category]) return invalid();
+      if (!points && !pending && !exempt && !missing) {
+        // Never quietly drop a school grade with an unfamiliar score format.
+        if (weight || noWeight || /\d\s*%/.test(value)) return reportInvalid('report-cell');
+        return;
+      }
+      if ((!weight && !noWeight) || !weight_table[category]) return reportInvalid('report-cell');
       const earned = points ? Number(points[1]) : null;
       const possible = points ? Number(points[2]) : 0;
       const weighting = weight ? Number(weight[1]) : 0;
       if (!Number.isFinite(possible) || !Number.isFinite(weighting) || weighting > 100
-        || earned !== null && (earned > possible || possible <= 0)) return invalid();
+        || earned !== null && (earned > possible || possible <= 0)) return reportInvalid('report-cell');
       const existing = assignment[category] as Record<string, unknown>[] | undefined;
-      if (existing && existing.length >= 20) return invalid();
+      if (existing && existing.length >= 20) return reportInvalid('report-assignment');
       const component = { get: pending || exempt || missing ? null : earned, total: possible,
         weight: weighting, finished: !pending && !missing, exempt, missing };
       if (existing) existing.push(component); else assignment[category] = [component];
       parts++;
     });
-    if (!parts) return invalid();
+    if (!parts) return reportInvalid('report-assignment');
     assignments.push(assignment);
   });
-  if (!Object.keys(weight_table).length && !/No (?:assessments|assignments|marks)/i.test($.root().text())) return invalid();
+  if (!Object.keys(weight_table).length && !/No (?:assessments|assignments|marks)/i.test($.root().text())) return reportInvalid('report-layout');
   return { assignments, weight_table };
 }
 
