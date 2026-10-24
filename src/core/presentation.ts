@@ -1,4 +1,5 @@
 import type { SyncState } from './sync.ts';
+import type { Course } from './model.ts';
 
 export const percent = (value: number | null) => value === null ? 'Not available' : `${value.toFixed(1)}%`;
 export const deltaLabel = (value: number | null) => value === null ? 'No previous grade' : Math.abs(value) < 0.05 ? 'No change' : `${value > 0 ? '+' : ''}${value.toFixed(1)} pp`;
@@ -51,8 +52,25 @@ export function syncMessage(state: SyncState): string {
     'portal-page': 'The school returned a non-report page after sign-in',
     'login-page': 'The school returned its login screen instead of your courses',
     'auth-rejected': 'The school rejected or expired the login session',
+    'report-cell': 'An assessment cell used an unsupported score or weight format',
+    'report-assignment': 'Assessment rows were missing required details',
+    'report-weighting': 'Course category weighting rows were not recognized',
+    'report-layout': 'The course assessment report was not recognized',
+    'report-normalization': 'Course assessment values failed validation',
   };
   const stage = state.problem ? ` Failed during: ${stages[state.problem]}.` : '';
   const reason = state.problemCode ? ` Detail: ${reasons[state.problemCode]}.` : '';
   return messages[state.status] + stage + reason;
+}
+
+/** Fixed labels only; never include raw grade content in diagnostics. */
+export function reportIssueMessage(reason: NonNullable<Course['reportProblem']>): string {
+  const descriptions: Record<NonNullable<Course['reportProblem']>, string> = {
+    'report-cell': 'The school used an assessment score or weight format this app does not yet understand.',
+    'report-assignment': 'The school assessment rows could not be interpreted.',
+    'report-weighting': 'The school category weighting table could not be interpreted.',
+    'report-layout': 'The course report layout could not be interpreted.',
+    'report-normalization': 'The school report contained grade data that failed validation.',
+  };
+  return descriptions[reason];
 }
