@@ -69,7 +69,7 @@ export function parseSchoolCourses(html: string): SchoolCourse[] {
     const gradeCell = isCompact ? cells.eq(2) : cells.eq(4);
     const markText = clean(gradeCell.text());
     const mark = markText.match(/(?:current\\s*mark\\s*=|(?:FINAL|MIDTERM)\\s*MARK\\s*:)\\s*(\\d+(?:\\.\\d+)?)\\s*%/i);
-    const noMark = /^(?:N\\/A|Not available|No mark|Please see teacher for current status|See teacher)$/i.test(markText);
+        const noMark = /^(?:N[/]A|Not available|No mark|Please see teacher for current status|See teacher)$/i.test(markText);
     if (!mark && markText && !noMark) return invalid();
     const href = gradeCell.find('a[href]').first().attr('href') ?? (isCompact ? undefined : cells.eq(0).find('a[href]').first().attr('href'));
     courses.push({
