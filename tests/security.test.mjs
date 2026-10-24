@@ -362,7 +362,7 @@ test('report navigation cannot follow external, malformed or ambiguous student l
 test('a valid HTML response without timetable or navigation is classified without exposing page text', async () => {
   const secret = 'Example private school HTML';
   for (const [html, reason] of [
-    ['<html><h1>Student Reports</h1><p>' + secret + '</p></html>', 'course-layout'],
+    ['<html><h1>Student Reports</h1><p>' + secret + '</p></html>', 'course-no-tables'],
     ['<html><h1>Other content</h1><p>' + secret + '</p></html>', 'portal-page'],
   ]) {
     const fakeFetch = async (_url, options) => new Response(options.method === 'POST' ? html : loginHTML,
