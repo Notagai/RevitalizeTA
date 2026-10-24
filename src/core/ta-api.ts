@@ -24,7 +24,7 @@ function date(value: unknown): string {
 }
 
 /** The public service wraps courses in { response }, unlike its docs' array example. */
-export function normalizeTAResponse(value: unknown, checkedAt = new Date().toISOString()): Snapshot {
+export function normalizeTAResponse(value: unknown, checkedAt = new Date().toISOString(), source: 'ta-api' | 'teachassist' = 'ta-api'): Snapshot {
   const courses = Array.isArray(value) ? value : record(value).response;
   if (!Array.isArray(courses) || courses.length > 40) return invalid();
   const normalized = courses.map((value): Course => {
@@ -76,7 +76,7 @@ export function normalizeTAResponse(value: unknown, checkedAt = new Date().toISO
       reportedAverage: raw.overall_mark === 'N/A' || raw.overall_mark === null ? null : numeric(raw.overall_mark, 100),
       categories: weights, assessments };
   });
-  return parseSnapshot({ version: 2, source: 'ta-api', checkedAt, courses: normalized });
+  return parseSnapshot({ version: source === 'teachassist' ? 3 : 2, source, checkedAt, courses: normalized });
 }
 
 export function validCredentials(value: Credentials): boolean {
