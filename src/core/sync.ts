@@ -3,7 +3,7 @@ import { parseSnapshot, type Snapshot } from './model.ts';
 export type Failure = 'offline' | 'auth' | 'partial' | 'rate-limited' | 'unavailable' | 'cancelled' | 'storage';
 /** Safe diagnostic labels only. Never include URLs, HTML, credentials, or cookies in errors. */
 export type SchoolStage = 'initial-page' | 'login-submission' | 'course-table' | 'course-report';
-export type SchoolProblem = 'redirect' | 'status' | 'content-type' | 'body-stream' | 'cookie' | 'parser' | 'native-exception' | 'login-method' | 'course-layout' | 'portal-page';
+export type SchoolProblem = 'redirect' | 'status' | 'content-type' | 'body-stream' | 'cookie' | 'parser' | 'native-exception' | 'login-method' | 'course-layout' | 'portal-page' | 'login-page' | 'auth-rejected';
 export type SyncStatus = 'never' | 'checking' | 'deleting' | 'changed' | 'unchanged' | Failure;
 export type Change = { courseId: string; description: string };
 export type SyncState = { status: SyncStatus; snapshot: Snapshot | null; lastAttempt: string | null; changes: Change[]; problem?: SchoolStage; problemCode?: SchoolProblem };
