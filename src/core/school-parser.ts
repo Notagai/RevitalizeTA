@@ -51,6 +51,33 @@ export function schoolLoginForm(html: string): { action: URL; subjectId: string 
   return { action, subjectId: rawId };
 }
 
+/** Only follow a school-provided student-reports link on the official host. */
+export function schoolReportsURL(html: string): URL | null {
+  const $ = load(html);
+  const targets = new Map<string, URL>();
+  $('a[href]').each((_index, element) => {
+    const href = $(element).attr('href');
+    if (!href || href.length > 1000 || /[\\\u0000-\u001F]/.test(href)) return;
+    let url: URL;
+    try { url = new URL(href, SCHOOL_ORIGIN + '/live/index.php'); } catch { return; }
+    if (url.origin !== SCHOOL_ORIGIN || url.username || url.password || url.hash
+      || url.pathname !== '/live/students/listReports.php') return;
+    const seen = new Set<string>();
+    for (const [key, value] of url.searchParams) {
+      if (!['student_id', 'school_id'].includes(key) || seen.has(key) || !/^\d{1,15}$/.test(value)) return;
+      seen.add(key);
+    }
+    if (seen.has('student_id')) targets.set(url.href, url);
+  });
+  return targets.size === 1 ? [...targets.values()][0] : null;
+}
+
+/** This classifies only page structure, never returns school content or identifiers. */
+export function schoolCoursePageKind(html: string): 'report-page' | 'other-page' {
+  const $ = load(html);
+  return /student\s+reports/i.test($.root().text()) ? 'report-page' : 'other-page';
+}
+
 export type SchoolCourse = {
   code: string; name: string; block: string; room: string; start_time: string; end_time: string;
   overall_mark: number | 'N/A'; isFinal: boolean; isMidterm: boolean; url: URL | null;
