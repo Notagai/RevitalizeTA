@@ -186,7 +186,7 @@ export function parseSchoolReport(html: string) {
   const $ = document(html);
   const reportInvalid = (reason: 'report-cell' | 'report-assignment' | 'report-weighting' | 'report-layout'): never => { throw new SyncError('partial', undefined, reason); };
   const assignments: Record<string, unknown>[] = [];
-  const weight_table: Record<string, { CW: number; W: number; SA: number | null }> = {};
+  const weight_table: Record<string, { CW: number; W: number; SA: number | null; reportedLevel?: AchievementLevel }> = {};
   const text = (el: Parameters<ReturnType<typeof load>>[0]) => clean($(el).text());
   const categoryFor = (value: string): string | null => {
     const name = value.toLowerCase();
@@ -228,8 +228,10 @@ export function parseSchoolReport(html: string) {
     const cells = $(row).children('td').map((_j, cell) => text(cell)).get();
     if (cells.length < 3 || cells.length > 5 || weight_table[category]) return reportInvalid('report-weighting');
     const values = cells.slice(1).map(percentValue);
+    const categoryLevel = parseLevel(cells[cells.length - 1]);
     const allBlank = cells.slice(1).every(value => value === '' || /^N\/A$/i.test(value));
-    if (values.some((v, i) => v === null && !allBlank && !/^N\/A$/i.test(cells[i + 1]) && cells[i + 1] !== '')) return reportInvalid('report-weighting');
+    if (values.some((v, i) => v === null && !allBlank && !/^N\/A$/i.test(cells[i + 1]) && cells[i + 1] !== ''
+      && !(i === values.length - 1 && categoryLevel))) return reportInvalid('report-weighting');
     if (allBlank) {
       // Zeroes are a sentinel for unpublished category weights. The UI must
       // render "Not published" rather than an invented percentage.
@@ -237,13 +239,15 @@ export function parseSchoolReport(html: string) {
       return;
     }
     if (values.length === 2) {
-      weight_table[category] = { W: values[0] ?? 0, CW: values[0] ?? 0, SA: values[1] };
+      weight_table[category] = { W: values[0] ?? 0, CW: values[0] ?? 0, SA: values[1],
+        ...(categoryLevel ? { reportedLevel: categoryLevel } : {}) };
     } else {
       const maybeFinal = category === 'F' && values.length === 2;
       if (maybeFinal) values.unshift(0);
       const weight = values.length >= 3 ? values[1] : values[0];
       if (weight === null || weight === undefined) return reportInvalid('report-weighting');
-      weight_table[category] = { W: values[0] ?? 0, CW: weight, SA: values.length >= 3 ? values[2] : null };
+      weight_table[category] = { W: values[0] ?? 0, CW: weight, SA: values.length >= 3 ? values[2] : null,
+        ...(categoryLevel ? { reportedLevel: categoryLevel } : {}) };
     }
   });
 
@@ -262,8 +266,10 @@ export function parseSchoolReport(html: string) {
       const weighted = percentValue(values[cells.length >= 4 ? 2 : 1]);
       const current = percentValue(values[1]);
       const achievement = percentValue(values[cells.length >= 4 ? 3 : 2]);
+      const reportedLevel = parseLevel(values[cells.length >= 4 ? 3 : 2]);
       if (weighted === null || weight_table[category]) return reportInvalid('report-weighting');
-      weight_table[category] = { CW: weighted, W: current ?? weighted, SA: achievement };
+      weight_table[category] = { CW: weighted, W: current ?? weighted, SA: achievement,
+        ...(reportedLevel ? { reportedLevel } : {}) };
     });
   }
 
