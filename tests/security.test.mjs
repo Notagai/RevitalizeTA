@@ -5,7 +5,7 @@ import { createRequire } from 'node:module';
 import { abortable, boundedText } from '../src/core/http.ts';
 import { createSchoolAdapter, validSchoolCredentials } from '../src/core/school-auth.ts';
 import { RequestLimiter } from '../src/core/ta-api.ts';
-import { parseSchoolCourses, parseSchoolReport, schoolCourseURL, schoolSnapshot, schoolLoginForm, schoolReportsURL, schoolCoursePageKind } from '../src/core/school-parser.ts';
+import { parseSchoolCourses, parseSchoolReport, schoolCourseURL, schoolSnapshot, schoolLoginForm, schoolReportsURL, schoolCoursePageKind, schoolTimetableFailure } from '../src/core/school-parser.ts';
 import { fetchSchoolGrades } from '../src/core/direct-school.ts';
 import { SyncController, SyncError } from '../src/core/sync.ts';
 import { credentials, loginHTML, courseHTML, compactCourseHTML, reportHTML, mockSchool } from './fixtures/school-html.mjs';
@@ -438,4 +438,53 @@ test('auth diagnostics survive grade-data clearing without retaining a snapshot'
   assert.equal(controller.state.problem, 'course-table');
   assert.equal(controller.state.problemCode, 'login-page');
   assert.equal(controller.state.snapshot, null);
+});
+
+test('timetable parser accepts split and trailing auxiliary columns safely', () => {
+  const html = '<html><h2>Student Reports</h2><table><tr><th>Class</th><th>Start</th><th>End</th><th>Grade</th><th>Status</th></tr>' +
+    '<tr><th>ENG2D-01 : English Block: P2 - rm. 201</th><td>2026-09-08</td><td>2027-01-29</td>' +
+    '<td><a href="viewReport.php?subject_id=123456&amp;student_id=123456789">current mark = 84%</a></td><td>Active</td></tr>' +
+    '</table></html>';
+  const courses = parseSchoolCourses(html);
+  assert.equal(courses.length, 1);
+  assert.equal(courses[0].code, 'ENG2D-01');
+  assert.equal(courses[0].overall_mark, 84);
+  assert.equal(courses[0].room, '201');
+  assert.equal(courses[0].url.pathname, '/live/students/viewReport.php');
+});
+
+test('timetable errors return no student data and name the actual structural limitation', async () => {
+  const pages = [
+    ['<h2>Student Reports</h2>', 'course-no-tables'],
+    ['<h2>Student Reports</h2><table><tr><td>Hello</td></tr></table>', 'course-no-rows'],
+    ['<h2>Student Reports</h2><table><tr><td>ENG2D : English</td><td>Today</td><td>current mark = 92%</td></tr></table>', 'course-no-dates'],
+  ];
+  for (const [html, category] of pages) {
+    assert.equal(schoolTimetableFailure(html), category);
+    await assert.rejects(fetchSchoolGrades(credentials, signal(), async (_url, options) => new Response(
+      options.method === 'POST' ? html : loginHTML, { headers: { 'content-type': 'text/html' } }
+    )), error => error.code === 'partial' && error.stage === 'course-table' &&
+      error.reason === category && !String(error.message).includes('ENG2D'));
+  }
+});
+
+test('a verified school-issued session and student ID allow one report-index GET fallback', async () => {
+  const calls = [];
+  const mock = async (url, options) => {
+    calls.push({ url: String(url), method: options.method, cookie: options.headers.Cookie });
+    const isPost = options.method === 'POST';
+    const text = String(url).includes('viewReport.php') ? reportHTML :
+      String(url).includes('listReports.php') ? compactCourseHTML() :
+      isPost ? '<h2>Student Reports</h2><p>Choose a report</p>' : loginHTML;
+    const headers = { 'content-type': 'text/html' };
+    if (isPost) headers['set-cookie'] = 'session_token=synthetic; Secure';
+    if (calls.length === 1) headers['set-cookie'] = 'student_id=123456789; Secure';
+    return new Response(text, { headers });
+  };
+  const grades = await fetchSchoolGrades(credentials, signal(), mock);
+  assert.equal(grades.courses.length, 2);
+  assert.equal(calls.filter(call => call.url.includes('listReports.php')).length, 1);
+  assert.match(calls[2].cookie, /session_token=synthetic/);
+  assert.equal(calls[2].method, 'GET');
+  assert.equal(calls.every(call => !call.url.includes('password=')), true);
 });
