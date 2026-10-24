@@ -102,3 +102,26 @@ test('a full native school flow handles a Level 4 overall mark and assessment le
   assert.equal(c.assessments.find(a => a.level)?.level, '4');
   assert.equal(c.reportProblem, undefined);
 });
+
+test('a category achievement Level is displayed as a band, not an invented reported percentage', () => {
+  const report = '<html><table width="90%"><tr><th>Category</th><th>Course Weighting</th><th>Achievement</th></tr>' +
+    '<tr bgcolor="#ffffaa"><td>Knowledge</td><td>50%</td><td>Level 4</td></tr>' +
+    '<tr bgcolor="#c0fea4"><td>Thinking</td><td>50%</td><td>Level 3+</td></tr>' +
+    '</table><p>No assessments</p></html>';
+  const parsed = parseSchoolReport(report);
+  assert.equal(parsed.weight_table.KU.reportedLevel, '4');
+  assert.equal(parsed.weight_table.T.reportedLevel, '3+');
+  const course = parseSchoolCourses(courseHTML(85))[0];
+  const snapshot = schoolSnapshot([{ ...course, ...parsed }], checked);
+  const normalized = snapshot.courses[0];
+  assert.equal(normalized.categories[0].reportedAverage, null);
+  assert.equal(normalized.categories[0].reportedLevel, '4');
+  assert.equal(normalized.categories[1].reportedLevel, '3+');
+  assert.equal(calculatedAverage(normalized), 90 * 0.5 + 74.5 * 0.5);
+  assert.equal(normalized.reportedAverage, 85);
+  assert.throws(() => parseSnapshot({
+    ...snapshot,
+    courses: [{ ...normalized, categories: [{ ...normalized.categories[0], reportedAverage: 92, reportedLevel: '4' },
+      normalized.categories[1]] }],
+  }));
+});
