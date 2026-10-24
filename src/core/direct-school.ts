@@ -42,11 +42,15 @@ export async function fetchSchoolGrades(credentials: Credentials, signal: AbortS
       if (!location) throw new SyncError('partial', undefined, 'redirect');
       const target = new URL(location, url);
       if (target.origin !== 'https://ta.yrdsb.ca' || target.username || target.password || target.hash
-        || !['/live/index.php', '/live/students/listReports.php', '/live/students/viewReport.php'].includes(target.pathname)) throw new SyncError('partial', undefined, 'redirect');
+        || !['/live/index.php', '/yrdsb/index.php', '/live/students/listReports.php', '/live/students/viewReport.php'].includes(target.pathname)) throw new SyncError('partial', undefined, 'redirect');
       if (target.pathname === '/live/students/viewReport.php') schoolCourseURL(target.href);
       else for (const [name, value] of target.searchParams) {
         if (!['student_id', 'subject_id', 'semester_id', 'school_id'].includes(name) || !/^\d{1,15}$/.test(value)) throw new SyncError('partial', undefined, 'redirect');
       }
+      // Some TeachAssist sessions require student_id alongside session_token.
+      // Only the official server's validated redirect may supply this cookie.
+      const studentId = target.searchParams.get('student_id');
+      if (studentId && cookies.has('session_token')) cookies.set('student_id', studentId);
       return request(target, undefined, redirects + 1);
     }
     if (response.status === 401 || response.status === 403) throw new SyncError('auth');
@@ -99,6 +103,8 @@ export async function fetchSchoolGrades(credentials: Credentials, signal: AbortS
       // No credentials are added to the URL and the same session stays in memory.
       const reportList = schoolReportsURL(html);
       if (!reportList) throw error;
+      const studentId = reportList.searchParams.get('student_id');
+      if (studentId && cookies.has('session_token')) cookies.set('student_id', studentId);
       const listing = await atStage('course-table', () => request(reportList));
       courses = await atStage('course-table', () => parseTimetable(listing));
     }
