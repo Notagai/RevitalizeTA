@@ -2,7 +2,7 @@ import { Fragment, useState } from 'react';
 import { Link } from 'expo-router';
 import { Image, StyleSheet, Text, View } from 'react-native';
 import { useApp } from '../../state/AppProvider';
-import { averageDelta, gradeSummary, weightedAverage } from '../../core/grades';
+import { averageDelta, estimatedCourseCount, estimatedOverallAverage, gradeSummary, weightedAverage } from '../../core/grades';
 import { coursesForSemester, type Semester } from '../../core/timetable';
 import { percent, syncMessage, timestamp } from '../../core/presentation';
 import { Body, Card, Heading, Page } from '../../ui/components';
@@ -15,12 +15,15 @@ import { useTheme } from '../../ui/theme';
 import { SCHOOL_LOGIN_ENABLED } from '../../core/integration';
 
 export default function Dashboard() {
-  const { sync, ready, displayName, courseWeights, signedIn, isGradeVisible } = useApp();
+  const { sync, ready, displayName, courseWeights, levelOverrides, signedIn, isGradeVisible } = useApp();
   const { colors } = useTheme();
   const [semester, setSemester] = useState<Semester>(1);
   const allCourses = sync.snapshot?.courses ?? [];
   const courses = coursesForSemester(allCourses, semester);
   const summary = gradeSummary(allCourses);
+  const estimate = estimatedOverallAverage(allCourses, levelOverrides);
+  const estimatedCount = estimatedCourseCount(allCourses, levelOverrides);
+  const hasLevels = allCourses.some(c => c.reportedLevel || c.assessments.some(a => a.level));
   const unreadableReports = allCourses.filter(course => course.reportProblem).length;
   const overallVisible = isGradeVisible('overall');
   const failed = !['never', 'checking', 'changed', 'unchanged'].includes(sync.status);
@@ -32,13 +35,18 @@ export default function Dashboard() {
     </View>
     <View style={[styles.hero, { backgroundColor: colors.hero }]}>
       <View style={styles.heroRow}>
-        {overallVisible ? <GradeRing value={summary.average} label="overall average" inverse /> :
+        {overallVisible ? <GradeRing value={hasLevels ? estimate : summary.average} label={hasLevels ? 'estimated overall average' : 'overall average'} inverse /> :
           <View accessible accessibilityLabel="Overall average hidden" style={{ width: 136, height: 136, alignItems: 'center', justifyContent: 'center' }}>
             <Text style={{ color: colors.onHero, fontSize: 20, fontWeight: '700' }}>Hidden</Text>
           </View>}
         <View style={styles.heroInfo}>
-          <Text style={{ color: colors.onHero, fontSize: 16, fontWeight: '600' }}>From {summary.reportedCount} {summary.reportedCount === 1 ? 'course' : 'courses'}</Text>
-          {overallVisible ? <GradeDelta value={averageDelta(allCourses, sync.snapshot?.comparison)} inverse /> :
+          <Text style={{ color: colors.onHero, fontSize: 16, fontWeight: '600' }}>
+            {hasLevels ? 'Estimate from ' + estimatedCount : 'From ' + summary.reportedCount} { (hasLevels ? estimatedCount : summary.reportedCount) === 1 ? 'course' : 'courses' }
+          </Text>
+          {overallVisible && hasLevels ? <Text style={{ color: colors.heroMuted, fontSize: 11, lineHeight: 17 }}>
+            Approximate. Level grades use available assessments or the midpoint of their official percentage bands.
+          </Text> : null}
+          {overallVisible ? (!hasLevels ? <GradeDelta value={averageDelta(allCourses, sync.snapshot?.comparison)} inverse /> : null) :
             <GradeReveal id="overall" label="Show overall grades" />}
           <Text style={{ color: colors.heroMuted, fontSize: 11, lineHeight: 17 }}>Last refreshed: {timestamp(sync.snapshot?.checkedAt ?? null)}</Text>
           <RefreshButton />
@@ -46,8 +54,8 @@ export default function Dashboard() {
       </View>
       <View style={[styles.weighted, { borderTopColor: colors.heroMuted + '40' }]}>
         <View style={{ flex: 1, gap: 3 }}><Text style={{ color: colors.heroMuted, fontSize: 12 }}>Weighted average</Text>
-          <Text style={{ color: colors.heroMuted, fontSize: 11 }}>Category estimates · course weights</Text></View>
-        <Text style={{ color: colors.onHero, fontSize: 25, fontWeight: '700', fontVariant: ['tabular-nums'] }}>{overallVisible ? percent(weightedAverage(allCourses, courseWeights)) : 'Hidden'}</Text>
+          <Text style={{ color: colors.heroMuted, fontSize: 11 }}>Approximate · assessments, level bands and course weights</Text></View>
+        <Text style={{ color: colors.onHero, fontSize: 25, fontWeight: '700', fontVariant: ['tabular-nums'] }}>{overallVisible ? percent(weightedAverage(allCourses, courseWeights, levelOverrides)) : 'Hidden'}</Text>
       </View>
     </View>
     {failed ? <View accessibilityLiveRegion="polite"><Body>{syncMessage(sync)}</Body></View> : null}
