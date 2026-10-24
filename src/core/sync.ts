@@ -49,8 +49,10 @@ export class SyncController {
   private store: SnapshotStore;
   private notify: (state: SyncState) => void;
   private now: () => string;
-  constructor(store: SnapshotStore, notify: (state: SyncState) => void, now = () => new Date().toISOString()) {
-    this.store = store; this.notify = notify; this.now = now;
+  private deadlineMs: number;
+  constructor(store: SnapshotStore, notify: (state: SyncState) => void,
+    now = () => new Date().toISOString(), deadlineMs = 15000) {
+    this.store = store; this.notify = notify; this.now = now; this.deadlineMs = deadlineMs;
   }
   private publish(next: SyncState) { this.state = next; this.notify(next); }
   async hydrate() {
@@ -72,7 +74,7 @@ export class SyncController {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const deadline = new Promise<never>((_, reject) => {
-        timer = setTimeout(() => { reject(new SyncError('unavailable')); abort.abort(); }, 15000);
+        timer = setTimeout(() => { reject(new SyncError('unavailable')); abort.abort(); }, this.deadlineMs);
         abort.signal.addEventListener('abort', () => reject(new SyncError('cancelled')), { once: true });
       });
       const raw = await Promise.race([adapter.fetch(abort.signal), deadline]);
