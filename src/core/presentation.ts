@@ -45,6 +45,8 @@ export function syncMessage(state: SyncState): string {
     'login-method': 'School login form requires a different sign-in method',
     'course-layout': 'Student Reports loaded, but its timetable layout is not recognized',
     'portal-page': 'The school returned a non-report page after sign-in',
+    'login-page': 'The school returned its login screen instead of your courses',
+    'auth-rejected': 'The school rejected or expired the login session',
   };
   const stage = state.problem ? ` Failed during: ${stages[state.problem]}.` : '';
   const reason = state.problemCode ? ` Detail: ${reasons[state.problemCode]}.` : '';
