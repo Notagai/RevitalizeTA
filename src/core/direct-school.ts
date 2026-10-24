@@ -1,7 +1,7 @@
 import { abortable, boundedText } from './http.ts';
 import { validSchoolCredentials, type Credentials } from './school-auth.ts';
 import { SyncError, type SchoolStage } from './sync.ts';
-import { parseSchoolCourses, parseSchoolReport, schoolCourseURL, schoolSnapshot, schoolLoginForm, schoolReportsURL, schoolCoursePageKind, type SchoolCourse } from './school-parser.ts';
+import { parseSchoolCourses, parseSchoolReport, schoolCourseURL, schoolSnapshot, schoolLoginForm, schoolReportsURL, schoolCoursePageKind, schoolTimetableFailure, type SchoolCourse } from './school-parser.ts';
 
 const LOGIN = 'https://ta.yrdsb.ca/live/index.php';
 
@@ -87,7 +87,8 @@ export async function fetchSchoolGrades(credentials: Credentials, signal: AbortS
       try { return parseSchoolCourses(page); }
       catch (error) {
         if (error instanceof SyncError && error.code === 'partial') {
-          const reason = schoolCoursePageKind(page) === 'report-page' ? 'course-layout' : 'portal-page';
+          const kind = schoolCoursePageKind(page);
+          const reason = kind === 'report-page' ? schoolTimetableFailure(page) : 'portal-page';
           throw new SyncError('partial', undefined, reason);
         }
         throw error;
@@ -101,7 +102,13 @@ export async function fetchSchoolGrades(credentials: Credentials, signal: AbortS
       // A school landing page sometimes links to the student report page rather
       // than embedding the timetable. Follow one explicitly linked, validated GET.
       // No credentials are added to the URL and the same session stays in memory.
-      const reportList = schoolReportsURL(html);
+      const linked = schoolReportsURL(html);
+      // TeachAssist also sets an authenticated student_id cookie on some
+      // installations. Use it only with a server-issued session token.
+      // Never guess identifiers from the supplied login credentials.
+      const cookieId = cookies.get('student_id');
+      const reportList = linked ?? (cookies.has('session_token') && cookieId && /^\d{1,15}$/.test(cookieId)
+        ? new URL(`/live/students/listReports.php?student_id=${cookieId}`, LOGIN) : null);
       if (!reportList) throw error;
       const studentId = reportList.searchParams.get('student_id');
       if (studentId && cookies.has('session_token')) cookies.set('student_id', studentId);
