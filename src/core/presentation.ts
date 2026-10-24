@@ -34,5 +34,16 @@ export function syncMessage(state: SyncState): string {
     'course-table': 'Reading the course list',
     'course-report': 'Reading course assessments',
   };
-  return messages[state.status] + (state.problem ? ` Failed during: ${stages[state.problem]}.` : '');
+  const reasons = {
+    redirect: 'Unexpected or blocked redirect',
+    status: 'Unexpected HTTP status',
+    'content-type': 'School returned non-HTML content',
+    'body-stream': 'Native response stream unavailable',
+    cookie: 'Invalid school session cookie',
+    parser: 'School HTML did not match a supported layout',
+    'native-exception': 'Native request or response reader failed',
+  };
+  const stage = state.problem ? ` Failed during: ${stages[state.problem]}.` : '';
+  const reason = state.problemCode ? ` Detail: ${reasons[state.problemCode]}.` : '';
+  return messages[state.status] + stage + reason;
 }
