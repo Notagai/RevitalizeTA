@@ -11,7 +11,7 @@ import { useTheme } from '../ui/theme';
 
 export default function CourseWeights() {
   const { course: target } = useLocalSearchParams<{ course?: string }>();
-  const { sync, courseWeights, setCourseWeight, isGradeVisible } = useApp();
+  const { sync, courseWeights, levelOverrides, setCourseWeight, isGradeVisible } = useApp();
   const { colors } = useTheme();
   const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
   const offsets = useRef(new Map<string, number>());
@@ -46,7 +46,11 @@ export default function CourseWeights() {
           style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 6, flexWrap: 'wrap' }}>
           <Text style={{ color: colors.text, flex: 1, minWidth: 120, fontSize: 14 }}>{category.name}</Text>
           <Text style={{ color: colors.muted, fontSize: 12 }}>{course.categories.every(item => item.weight === 0) ? 'Weight not published' : category.weight + '% weight'}</Text>
-          <Text style={{ color: colors.accent, fontSize: 16, fontWeight: '700' }}>{isGradeVisible(course.id) ? percent(category.reportedAverage ?? categoryAverage(course, category.id)) : 'Hidden'}</Text>
+          <Text style={{ color: colors.accent, fontSize: 16, fontWeight: '700' }}>
+            {isGradeVisible(course.id) ? category.reportedAverage !== null && category.reportedAverage !== undefined ?
+              percent(category.reportedAverage) : categoryAverage(course, category.id, levelOverrides[course.id]) !== null ?
+                '~' + percent(categoryAverage(course, category.id, levelOverrides[course.id])) : 'Not available' : 'Hidden'}
+          </Text>
         </View>)}</>}
       </Card>
     </View>)}
