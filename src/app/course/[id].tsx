@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Link, useLocalSearchParams } from 'expo-router';
 import { FlatList, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -27,8 +27,8 @@ export default function CourseDetails() {
   const inferred = course ? calculatedAverage(course, overrides) : null;
   const estimate = course ? estimatedCourseAverage(course, overrides) : null;
   const visible = !course || isGradeVisible(course.id);
-  const assignments = useMemo(() => sortedAssignments(course?.assessments ?? [], sort, overrides).filter(assignment =>
-    filter === 'All' || assignment.parts.some(a => a.status === (filter === 'Pending' ? 'ungraded' : filter.toLowerCase()))), [course, sort, filter, overrides]);
+  const assignments = sortedAssignments(course?.assessments ?? [], sort, overrides).filter(assignment =>
+    filter === 'All' || assignment.parts.some(a => a.status === (filter === 'Pending' ? 'ungraded' : filter.toLowerCase())));
   const previousAverage = sync.snapshot?.comparison?.courses.find(c => c.id === id)?.reportedAverage;
   return <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={{ flex: 1, backgroundColor: colors.background }}>
     <FlatList data={visible ? assignments : []} keyExtractor={item => item.id} keyboardShouldPersistTaps="handled"
