@@ -1,14 +1,17 @@
 import { parseSnapshot, type Snapshot } from './model.ts';
 
 export type Failure = 'offline' | 'auth' | 'partial' | 'rate-limited' | 'unavailable' | 'cancelled' | 'storage';
+/** Safe diagnostic labels only. Never include URLs, HTML, credentials, or cookies in errors. */
+export type SchoolStage = 'initial-page' | 'login-submission' | 'course-table' | 'course-report';
 export type SyncStatus = 'never' | 'checking' | 'deleting' | 'changed' | 'unchanged' | Failure;
 export type Change = { courseId: string; description: string };
-export type SyncState = { status: SyncStatus; snapshot: Snapshot | null; lastAttempt: string | null; changes: Change[] };
+export type SyncState = { status: SyncStatus; snapshot: Snapshot | null; lastAttempt: string | null; changes: Change[]; problem?: SchoolStage };
 export interface SnapshotStore { load(): Promise<unknown>; save(snapshot: Snapshot): Promise<void>; clear(): Promise<void> }
 export interface Adapter { fetch(signal: AbortSignal): Promise<unknown> }
 export class SyncError extends Error {
   readonly code: Failure;
-  constructor(code: Failure) { super(code); this.code = code; }
+  readonly stage?: SchoolStage;
+  constructor(code: Failure, stage?: SchoolStage) { super(code); this.code = code; this.stage = stage; }
 }
 export const initialState: SyncState = { status: 'never', snapshot: null, lastAttempt: null, changes: [] };
 
@@ -61,7 +64,7 @@ export class SyncController {
     if (this.pending) return this.pending;
     const abort = new AbortController();
     this.abort = abort;
-    this.publish({ ...this.state, status: 'checking', lastAttempt: this.now(), changes: [] });
+    this.publish({ ...this.state, status: 'checking', lastAttempt: this.now(), changes: [], problem: undefined });
     this.pending = this.run(adapter, abort).finally(() => { this.pending = null; this.abort = null; });
     return this.pending;
   }
@@ -83,9 +86,10 @@ export class SyncController {
       const changes = diffSnapshots(this.state.snapshot, snapshot);
       try { await this.store.save(snapshot); } catch { throw new SyncError('storage'); }
       if (abort.signal.aborted) throw new SyncError('cancelled');
-      this.publish({ ...this.state, snapshot, changes, status: changes.length ? 'changed' : 'unchanged' });
+      this.publish({ ...this.state, snapshot, changes, status: changes.length ? 'changed' : 'unchanged', problem: undefined });
     } catch (error) {
-      this.publish({ ...this.state, status: error instanceof SyncError ? error.code : 'partial', changes: [] });
+      this.publish({ ...this.state, status: error instanceof SyncError ? error.code : 'partial',
+        problem: error instanceof SyncError ? error.stage : undefined, changes: [] });
     } finally { if (timer) clearTimeout(timer); }
   }
   cancel() { this.abort?.abort(); }
@@ -98,7 +102,7 @@ export class SyncController {
     this.cancel();
     await this.pending;
     this.publish({ ...this.state, status: 'deleting', changes: [] });
-    try { await this.store.clear(); this.publish({ ...initialState, status }); return true; }
+    try { await this.store.clear(); this.publish({ ...initialState, status, problem: status === 'auth' ? this.state.problem : undefined }); return true; }
     catch { this.publish({ ...this.state, status: 'storage' }); return false; }
   }
 }
