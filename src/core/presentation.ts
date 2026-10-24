@@ -28,5 +28,11 @@ export function syncMessage(state: SyncState): string {
     cancelled: 'Check cancelled. Saved grades were kept.',
     storage: 'Grades could not be saved. Retry or clear grade data in Settings.',
   };
-  return messages[state.status];
+  const stages = {
+    'initial-page': 'Opening the school website',
+    'login-submission': 'Submitting the school login form',
+    'course-table': 'Reading the course list',
+    'course-report': 'Reading course assessments',
+  };
+  return messages[state.status] + (state.problem ? ` Failed during: ${stages[state.problem]}.` : '');
 }
