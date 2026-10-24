@@ -294,7 +294,9 @@ export function parseSchoolReport(html: string) {
       if (!value) return;
       const points = value.match(/(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)/);
       const levelToken = value.match(/\b(?:achievement\s+)?level\s*[:=]?\s*([1-4])\s*([+-])?(?=\s|$|[;,])/i);
-      const level = levelToken ? parseLevel('Level ' + levelToken[1] + (levelToken[2] ?? '')) : null;
+      const bareLevel = !points && value.match(/^\s*([1-4])\s*([+-])?(?=\s|$|[;,])/);
+      const level = levelToken ? parseLevel('Level ' + levelToken[1] + (levelToken[2] ?? '')) :
+        bareLevel ? parseLevel(bareLevel[1] + (bareLevel[2] ?? '')) : null;
       const weight = value.match(/\bweight\s*=\s*(\d+(?:\.\d+)?)/i);
       const noWeight = /\bno\s+weight\b/i.test(value);
       const pending = /not\s*finished|unfinished|ungraded|pending|N\/A/i.test(value);
