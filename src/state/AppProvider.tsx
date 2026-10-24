@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type PropsWithChildren } from 'react';
 import { AppState, Platform } from 'react-native';
+import { fetch as expoFetch } from 'expo/fetch';
+import { fetchSchoolGrades } from '../core/direct-school';
 import { FixtureCache } from '../core/cache';
 import { initialState, SyncController, type SyncState } from '../core/sync';
 import { SessionStore } from '../core/session-store';
@@ -13,6 +15,8 @@ import { AppContext } from './context';
 
 export type { ThemeChoice } from '../core/preferences';
 export { useApp } from './context';
+const nativeSchoolFetcher = (credentials: Credentials, signal: AbortSignal) => fetchSchoolGrades(credentials, signal, expoFetch);
+
 export function AppProvider({ children }: PropsWithChildren) {
   const [sync, setSync] = useState<SyncState>(initialState);
   const [ready, setReady] = useState(false);
@@ -70,7 +74,7 @@ export function AppProvider({ children }: PropsWithChildren) {
     if (!ready || !SCHOOL_LOGIN_ENABLED || Platform.OS === 'web' || !session.current.credentials || signingIn.current) return;
     if (Date.now() >= session.current.expiresAt) { await clear(); return; }
     const generation = session.current.generation;
-    await controller.refresh(createSchoolAdapter(session.current.credentials, limiter, { consent: true }));
+    await controller.refresh(createSchoolAdapter(session.current.credentials, limiter, { ...{ consent: true }, fetchGrades: nativeSchoolFetcher }));
     if (generation !== session.current.generation) return;
     setRetryAt(limiter.retryAt);
     if (controller.state.status === 'auth') await clear('auth');
@@ -88,7 +92,7 @@ export function AppProvider({ children }: PropsWithChildren) {
         if (!await controller.clear()) return false;
       }
       if (generation !== session.current.generation) return false;
-      await controller.refresh(createSchoolAdapter(value, limiter, { consent }));
+      await controller.refresh(createSchoolAdapter(value, limiter, { ...{ consent }, fetchGrades: nativeSchoolFetcher }));
       setRetryAt(limiter.retryAt);
       if (generation !== session.current.generation) { await controller.clear(); return false; }
       if (!['changed', 'unchanged'].includes(controller.state.status)) {
