@@ -58,7 +58,7 @@ export function sortedAssignments(assessments: Assessment[], sort: AssessmentSor
 }
 
 export function categoryAverage(course: Course, categoryId: string, overrides: LevelOverrides = {}): number | null {
-  const entries = course.assessments.filter(a => a.category === categoryId)
+  const entries = course.assessments.filter(a => a.category === categoryId && a.weight > 0)
     .map(a => ({ a, score: assessmentPercent(a, overrides) }))
     .filter((entry): entry is { a: Assessment; score: number } => entry.score !== null);
   const weight = entries.reduce((sum, entry) => sum + (entry.a.weight > 0 ? entry.a.weight : 1), 0);
