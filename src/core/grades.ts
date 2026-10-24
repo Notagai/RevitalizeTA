@@ -1,4 +1,4 @@
-import { assessmentPercent, calculatedAverage, estimatedCourseAverage, type Assessment, type Comparison, type Course, type LevelOverrides } from './model.ts';
+import { assessmentPercent, estimatedCourseAverage, type Assessment, type Comparison, type Course, type LevelOverrides } from './model.ts';
 
 export function gradeDelta(current: number | null, previous: number | null | undefined): number | null {
   return current === null || previous === null || previous === undefined ? null : current - previous;
