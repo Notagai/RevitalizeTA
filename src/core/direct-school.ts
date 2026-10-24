@@ -17,9 +17,13 @@ export async function fetchSchoolGrades(credentials: Credentials, signal: AbortS
         ...(cookies.size ? { Cookie: [...cookies].map(([name, value]) => `${name}=${value}`).join('; ') } : {}) },
       ...(body ? { body: body.toString() } : {}), signal, redirect: 'manual', credentials: 'omit', cache: 'no-store', referrerPolicy: 'no-referrer',
     }), signal);
-    // A native implementation must not auto-follow redirects; reject changed final URLs.
-    // Explicit redirect handling below is restricted to the official school origin.
-    if (response.redirected || (response.url && response.url !== url.href)) throw new SyncError('partial', undefined, 'redirect');
+    // Expo SDK 58 Android sets response.redirected=true for a *raw 3xx response*
+    // even with redirect:'manual'. That flag alone does not mean it auto-followed.
+    // Reject any changed request URL, or an actually auto-followed successful response.
+    const isRedirectStatus = response.status >= 300 && response.status < 400;
+    if ((response.url && response.url !== url.href) || (response.redirected && !isRedirectStatus)) {
+      throw new SyncError('partial', undefined, 'redirect');
+    }
     const setCookies = response.headers.getSetCookie?.() ?? response.headers.get('set-cookie')?.split(/,\s*(?=[A-Za-z0-9_-]+=)/) ?? [];
     for (const cookie of setCookies) {
       if (cookie.length > 4096) throw new SyncError('partial', undefined, 'cookie');
