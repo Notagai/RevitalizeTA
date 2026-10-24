@@ -1,3 +1,4 @@
+import { levelRange, validLevel, type AchievementLevel } from './levels.ts';
 /** Versioned normalized contract. Transport data is validated before reaching UI. */
 export type Assessment = {
   id: string;
@@ -9,6 +10,8 @@ export type Assessment = {
   status: 'graded' | 'ungraded' | 'exempt' | 'missing';
   assignmentId?: string;
   date?: string;
+  /** Raw school-reported achievement level, not a percent. */
+  level?: AchievementLevel;
 };
 export type Course = {
   id: string;
@@ -21,6 +24,8 @@ export type Course = {
   room?: string;
   credit?: number;
   reportedAverage: number | null;
+  /** Exact course-level label; never convert this into a purported official %. */
+  reportedLevel?: AchievementLevel;
   categories: { id: string; name: string; weight: number; reportedAverage?: number | null }[];
   assessments: Assessment[];
   /** Course marks may load even when the private assessment HTML is unsupported. */
@@ -81,13 +86,17 @@ export function parseSnapshot(value: unknown): Snapshot {
       const status = a.status;
       if (status !== 'graded' && status !== 'ungraded' && status !== 'exempt' && status !== 'missing') return fail();
       const possible = number(a.possible, status === 'graded' ? Number.MIN_VALUE : 0);
+      const level = a.level === undefined ? undefined : validLevel(a.level) ? a.level : fail();
       const earned = a.earned === null ? null : number(a.earned, 0, possible);
-      if ((status === 'graded') !== (earned !== null)) fail();
+      if (level !== undefined && (earned !== null || status !== 'graded' || possible !== 0)) fail();
+      if (status === 'graded' && earned === null && level === undefined) fail();
+      if (status !== 'graded' && earned !== null) fail();
       const category = text(a.category);
       if (!categories.some(cat => cat.id === category)) fail();
       const date = a.date === undefined ? undefined : text(a.date);
       if (date !== undefined && (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date)) || new Date(date).toISOString().slice(0, 10) !== date)) fail();
       return { id: text(a.id), name: text(a.name), category, earned, possible, weight: number(a.weight), status,
+        ...(level === undefined ? {} : { level }),
         ...(a.assignmentId === undefined ? {} : { assignmentId: text(a.assignmentId) }), ...(date === undefined ? {} : { date }) };
     });
     unique(assessments);
@@ -104,10 +113,14 @@ export function parseSnapshot(value: unknown): Snapshot {
       ...(c.teacher === undefined ? {} : { teacher: text(c.teacher) }),
       ...(c.room === undefined ? {} : { room: text(c.room) }),
       ...(c.credit === undefined ? {} : { credit: number(c.credit, 0, 10) }),
-      reportedAverage: c.reportedAverage === null ? null : number(c.reportedAverage, 0, 100), categories, assessments,
+      reportedAverage: c.reportedAverage === null ? null : number(c.reportedAverage, 0, 100),
+      ...(c.reportedLevel === undefined ? {} : { reportedLevel: validLevel(c.reportedLevel) ? c.reportedLevel : fail() }),
+      categories, assessments,
     };
   });
   unique(courses);
+  if (courses.some(c => c.reportedLevel !== undefined &&
+    (c.reportedAverage !== null || root.source !== 'teachassist'))) fail();
   let comparison: Comparison | undefined;
   if (root.comparison !== undefined) {
     const raw = object(root.comparison);
@@ -125,15 +138,47 @@ export function parseSnapshot(value: unknown): Snapshot {
 
 /** Weighted category mean; empty categories are omitted and remaining weights renormalized.
  * Missing/ungraded/exempt entries are excluded, never silently counted as zero. */
-export function calculatedAverage(course: Course): number | null {
-  let sum = 0;
-  let weights = 0;
+/** Assignment-level student conversion overrides live in memory and never alter school grades. */
+export type LevelOverrides = Readonly<Record<string, number>>;
+
+export function assessmentPercent(assessment: Assessment, overrides: LevelOverrides = {}): number | null {
+  if (assessment.status !== 'graded') return null;
+  if (assessment.level) {
+    const user = overrides[assessment.id];
+    if (typeof user === 'number' && Number.isFinite(user)) {
+      const { min, max } = levelRange(assessment.level);
+      if (user >= min && user <= max) return user;
+    }
+    return levelRange(assessment.level).midpoint;
+  }
+  return assessment.earned !== null && assessment.possible > 0
+    ? assessment.earned / assessment.possible * 100 : null;
+}
+
+/** Category-weighted estimate; unpublished categories fallback to assignment weights.
+ * Level grades use the midpoint of the Ministry's official RANGE unless a
+ * valid student-provided conversion replaces the midpoint. Always label this
+ * estimate as approximate. */
+export function calculatedAverage(course: Course, overrides: LevelOverrides = {}): number | null {
+  let sum = 0, weights = 0;
+  const knownWeights = course.categories.some(c => c.weight > 0);
   for (const category of course.categories) {
-    const entries = course.assessments.filter(a => a.category === category.id && a.status === 'graded' && a.weight > 0);
-    const total = entries.reduce((s, a) => s + a.weight, 0);
-    if (!total || !category.weight) continue;
-    sum += entries.reduce((s, a) => s + a.earned! / a.possible * 100 * a.weight, 0) / total * category.weight;
-    weights += category.weight;
+    const entries = course.assessments.filter(a => a.category === category.id)
+      .map(a => ({ a, grade: assessmentPercent(a, overrides) }))
+      .filter((entry): entry is { a: Assessment; grade: number } => entry.grade !== null);
+    if (!entries.length) continue;
+    const perCategoryTotal = entries.reduce((total, entry) => total + (entry.a.weight > 0 ? entry.a.weight : 1), 0);
+    const mean = entries.reduce((total, entry) => total + entry.grade * (entry.a.weight > 0 ? entry.a.weight : 1), 0) / perCategoryTotal;
+    const weight = knownWeights ? category.weight : perCategoryTotal;
+    if (weight <= 0) continue;
+    sum += mean * weight;
+    weights += weight;
   }
   return weights ? sum / weights : null;
+}
+
+/** Prefer graded assessments, then published percentage, then level-band midpoint. */
+export function estimatedCourseAverage(course: Course, overrides: LevelOverrides = {}): number | null {
+  return calculatedAverage(course, overrides) ?? course.reportedAverage ??
+    (course.reportedLevel ? levelRange(course.reportedLevel).midpoint : null);
 }
