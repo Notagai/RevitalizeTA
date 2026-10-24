@@ -1,6 +1,6 @@
 import { abortable, boundedText } from './http.ts';
 import { validSchoolCredentials, type Credentials } from './school-auth.ts';
-import { SyncError } from './sync.ts';
+import { SyncError, type SchoolStage } from './sync.ts';
 import { parseSchoolCourses, parseSchoolReport, schoolCourseURL, schoolSnapshot } from './school-parser.ts';
 
 const LOGIN = 'https://ta.yrdsb.ca/live/index.php';
@@ -54,16 +54,27 @@ export async function fetchSchoolGrades(credentials: Credentials, signal: AbortS
     if (totalBytes > 8 * 1024 * 1024) throw new SyncError('partial');
     return html;
   }
+  async function atStage<T>(stage: SchoolStage, action: () => Promise<T> | T): Promise<T> {
+    try { return await action(); }
+    catch (error) {
+      if (error instanceof SyncError) throw new SyncError(error.code, stage);
+      throw error;
+    }
+  }
   try {
-    // Seed any PHP session, then submit precisely the fields in the public form.
-    await request(new URL(LOGIN));
-    const html = await request(new URL(LOGIN), new URLSearchParams({ username: credentials.username, password: credentials.password, subject_id: '0', submit: 'Login' }));
-    const courses = parseSchoolCourses(html);
+    // Fetch a session page and submit the official form using HTTPS POST.
+    // Never retry login using credential-bearing GET URLs.
+    await atStage('initial-page', () => request(new URL(LOGIN)));
+    const html = await atStage('login-submission', () => request(new URL(LOGIN),
+      new URLSearchParams({ username: credentials.username, password: credentials.password, subject_id: '0', submit: 'Login' })));
+    const courses = await atStage('course-table', () => parseSchoolCourses(html));
     const reports = [];
     for (const course of courses) {
-      const report = course.url ? parseSchoolReport(await request(course.url)) : { assignments: [], weight_table: {} };
+      const report = course.url
+        ? await atStage('course-report', async () => parseSchoolReport(await request(course.url!)))
+        : { assignments: [], weight_table: {} };
       reports.push({ ...course, ...report });
     }
-    return schoolSnapshot(reports, new Date().toISOString());
+    return await atStage('course-report', () => schoolSnapshot(reports, new Date().toISOString()));
   } finally { cookies.clear(); }
 }
