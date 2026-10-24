@@ -21,3 +21,14 @@ export function mockSchool() {
   };
   return { requests, fetchImpl };
 }
+
+/** Three-column 85%-wide course table used by current TeachAssist clients. */
+export const compactCourseHTML = (mark = 94.5) => `<html><table width="85%">
+  <tr><th>Course</th><th>Date</th><th>Mark</th></tr>
+  <tr bgcolor="#f0f0f0"><td>MHF4U-01 : Advanced Functions Block: P1 - rm. 306</td>
+  <td>2026-09-08 ~ 2027-01-29</td>
+  <td><a href="viewReport.php?subject_id=123456&amp;student_id=987654321&amp;school_id=12">current mark = ${mark}%</a></td></tr>
+  <tr bgcolor="#f0f0f0"><td>SPH4U-02 : Physics Block: P2 - rm. 110</td>
+  <td>2026-09-08 ~ 2027-01-29</td>
+  <td>Please see teacher for current status</td></tr>
+</table></html>`;

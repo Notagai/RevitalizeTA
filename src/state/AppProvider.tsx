@@ -39,7 +39,7 @@ export function AppProvider({ children }: PropsWithChildren) {
   const signingIn = useRef(false);
   const [preferences] = useState(() => new Preferences(slots));
   const [limiter] = useState(() => new RequestLimiter());
-  const [controller] = useState(() => new SyncController(new SessionStore(), setSync));
+  const [controller] = useState(() => new SyncController(new SessionStore(), setSync, undefined, 60000));
   const cancel = useCallback(() => { session.current.generation++; controller.cancel(); }, [controller]);
   const clear = useCallback(async (status: 'never' | 'auth' = 'never') => {
     session.current.generation++; session.current.credentials = null; session.current.username = ''; session.current.expiresAt = 0;

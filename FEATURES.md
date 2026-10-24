@@ -19,7 +19,8 @@
 - [x] Get rid of Liquid Glass
 - [ ] Have it actually pull grades through TA API and get rid of "demo grades" features; replace with normal features.
 - [x] Rate limit and secure the requests so that there can be no malicious script injection
-
+- [] Get rid of the useless text in the sign in. Make it a more simple Sign In with the logo, Sign In text, display name, username, password.
+- [] Fix the sign in and grab grades.
 Implementation notes (2026-10-23, updated for the security/login request):
 
 - The UI, calculation and sorting items above remain implemented. Teacher/date/credit availability depends on the school response; missing values are explicit.
