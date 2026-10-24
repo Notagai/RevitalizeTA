@@ -6,7 +6,7 @@ import { useApp } from '../../state/AppProvider';
 import { calculatedAverage } from '../../core/model';
 import { assessmentSorts, gradeDelta, sortedAssignments, type AssessmentSort } from '../../core/grades';
 import { courseSemester } from '../../core/timetable';
-import { percent } from '../../core/presentation';
+import { percent, reportIssueMessage } from '../../core/presentation';
 import { Action, BackButton, Body, Card, Heading } from '../../ui/components';
 import { GradeDelta, GradeRing } from '../../ui/grade-visuals';
 import { AssignmentCard } from '../../ui/assignment-card';
@@ -52,6 +52,11 @@ export default function CourseDetails() {
             <Link href={{ pathname: '/weights', params: { course: course.id } }} style={[styles.link, { color: colors.accent }]}>Course weights</Link>
           </Card>
           <Heading>Assessments</Heading>
+          {course.reportProblem ? <Card>
+            <Text style={{ color: colors.danger, fontSize: 14, fontWeight: '700' }}>Assessment import incomplete</Text>
+            <Body>{reportIssueMessage(course.reportProblem)}</Body>
+            <Body muted>Your reported course mark remains available. Individual assessment results could not be verified. Diagnostic: {course.reportProblem}</Body>
+          </Card> : null}
           <ChoiceChips label="Assessment status" options={filters} value={filter} onChange={setFilter} />
           <ChoiceChips label="Sort assessments" options={assessmentSorts} value={sort} onChange={setSort} />
           {!course.assessments.some(a => a.date) && course.assessments.length > 0 && (sort === 'Newest' || sort === 'Oldest')
@@ -62,7 +67,7 @@ export default function CourseDetails() {
           </Card>}
         </>}
       </View>}
-      ListEmptyComponent={course && visible ? <Card><Body muted>{course.assessments.length ? 'No assessments match this filter.' : 'No assessments yet.'}</Body></Card> : undefined}
+      ListEmptyComponent={course && visible ? <Card><Body muted>{course.reportProblem ? 'Assessment details are unavailable until the report format is supported.' : course.assessments.length ? 'No assessments match this filter.' : 'No assessments yet.'}</Body></Card> : undefined}
       ListFooterComponent={visible && (sort !== 'Newest' || filter !== 'All') ? <View style={{ paddingTop: 16 }}><Action label="Reset sort and filters" onPress={() => { setSort('Newest'); setFilter('All'); }} /></View> : undefined}
     />
   </SafeAreaView>;
