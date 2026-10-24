@@ -63,19 +63,28 @@ export function schoolReportsURL(html: string): URL | null {
     if (url.origin !== SCHOOL_ORIGIN || url.username || url.password || url.hash
       || url.pathname !== '/live/students/listReports.php') return;
     const seen = new Set<string>();
+    let valid = true;
     for (const [key, value] of url.searchParams) {
-      if (!['student_id', 'school_id'].includes(key) || seen.has(key) || !/^\d{1,15}$/.test(value)) return;
+      if (!['student_id', 'school_id'].includes(key) || seen.has(key) || !/^\d{1,15}$/.test(value)) {
+        valid = false;
+        break;
+      }
       seen.add(key);
     }
-    if (seen.has('student_id')) targets.set(url.href, url);
+    if (valid && seen.has('student_id')) targets.set(url.href, url);
   });
   return targets.size === 1 ? [...targets.values()][0] : null;
 }
 
 /** This classifies only page structure, never returns school content or identifiers. */
-export function schoolCoursePageKind(html: string): 'report-page' | 'other-page' {
+export function schoolCoursePageKind(html: string): 'report-page' | 'login-page' | 'other-page' {
   const $ = load(html);
-  return /student\s+reports/i.test($.root().text()) ? 'report-page' : 'other-page';
+  const reportHeader = /student\s+reports/i.test($.root().text());
+  // A login form after submitting credentials means authentication did not
+  // produce a session, even if the portal returns HTTP 200.
+  if ($('input[type="password"], input[name="password"]').length
+    && !reportHeader) return 'login-page';
+  return reportHeader ? 'report-page' : 'other-page';
 }
 
 export type SchoolCourse = {
@@ -111,14 +120,15 @@ export function parseSchoolCourses(html: string): SchoolCourse[] {
       ? clean(cells.eq(0).text()) + ' ' + clean(cells.eq(1).text())
       : clean(cells.eq(0).text());
     const block = blockText.match(/\bBlock:\s*P?\s*([1-5])\b/i);
-    const room = blockText.match(/\brm\.\s*([^,;]+?)(?:\s+Block:|$)/i)?.[1]?.trim() ?? 'N/A';
+    const room = blockText.match(/\brm\.\s*([^,;]+?)(?:\s+Block:|$)/i)?.[1]?.trim().slice(0, 80) ?? 'N/A';
     const dateText = cells.slice(1, -1).toArray().map(cell => clean($(cell).text())).join(' ');
     const dates = dateText.match(/\d{4}-\d{2}-\d{2}/g);
     if (!dates || dates.length !== 2 || dates[0] > dates[1]) return invalid();
     const gradeCell = cells.last();
     const markText = clean(gradeCell.text());
     const mark = markText.match(/(?:current\s*mark\s*=|(?:FINAL|MIDTERM)\s*MARK\s*:)\s*(\d+(?:\.\d+)?)\s*%/i);
-    const noGrade = !markText || /(?:please\s+see\s+teacher\s+for\s+current\s+status|no\s+mark|not\s+available|n[/]a|see\s+teacher)/i.test(markText);
+    const noGrade = !markText || /(?:please\s+see\s+teacher\s+for\s+current\s+status|no\s+mark|not\s+available|n[/]a|see\s+teacher|no\s+grade)/i.test(markText);
+    if (mark && Number(mark[1]) > 100) return invalid();
     if (!mark && !noGrade) return invalid();
     const href = gradeCell.find('a[href]').first().attr('href')
       ?? cells.eq(0).find('a[href]').first().attr('href');
