@@ -5,7 +5,7 @@ import { createRequire } from 'node:module';
 import { abortable, boundedText } from '../src/core/http.ts';
 import { createSchoolAdapter, validSchoolCredentials } from '../src/core/school-auth.ts';
 import { RequestLimiter } from '../src/core/ta-api.ts';
-import { parseSchoolCourses, parseSchoolReport, schoolCourseURL, schoolSnapshot, schoolLoginForm } from '../src/core/school-parser.ts';
+import { parseSchoolCourses, parseSchoolReport, schoolCourseURL, schoolSnapshot, schoolLoginForm, schoolReportsURL } from '../src/core/school-parser.ts';
 import { fetchSchoolGrades } from '../src/core/direct-school.ts';
 import { SyncController } from '../src/core/sync.ts';
 import { credentials, loginHTML, courseHTML, compactCourseHTML, reportHTML, mockSchool } from './fixtures/school-html.mjs';
@@ -325,4 +325,50 @@ test('course parser handles an unmarked timetable table surrounded by navigation
   assert.equal(courses[0].room, '216');
   assert.equal(courses[0].block, '3');
   assert.equal(courses[0].overall_mark, 82);
+});
+
+test('a school-provided student reports link loads the timetable on-device without another login', async () => {
+  const calls = [];
+  const afterLogin = '<html><h1>Welcome</h1><a href="/live/students/listReports.php?student_id=123456789">Student reports</a></html>';
+  const fetchImpl = async (url, options) => {
+    calls.push({ url: String(url), method: options.method, body: options.body });
+    const html = options.method === 'POST' ? afterLogin :
+      String(url).includes('listReports.php') ? compactCourseHTML() :
+      String(url).includes('viewReport.php') ? reportHTML : loginHTML;
+    return new Response(html, { headers: { 'content-type': 'text/html' } });
+  };
+  const result = await fetchSchoolGrades(credentials, signal(), fetchImpl);
+  assert.equal(result.courses.length, 2);
+  assert.deepEqual(calls.map(c => c.method), ['GET', 'POST', 'GET', 'GET']);
+  assert.equal(calls[2].url, 'https://ta.yrdsb.ca/live/students/listReports.php?student_id=123456789');
+  assert.equal(calls[2].body, undefined);
+  assert.equal(calls.every(c => !c.url.includes('password=')), true);
+});
+
+test('report navigation cannot follow external, malformed or ambiguous student links', () => {
+  for (const href of ['https://evil.example/live/students/listReports.php?student_id=123',
+    '//evil.example/live/students/listReports.php?student_id=123',
+    '/live/students/listReports.php?student_id=123&password=secret',
+    '/live/students/listReports.php?student_id=123&student_id=456',
+    '/live/students/delete.php?student_id=123',
+    '/live/students/listReports.php?student_id=bad']) {
+    assert.equal(schoolReportsURL('<a href="' + href.replaceAll('&', '&amp;') + '">Reports</a>'), null);
+  }
+  const competing = '<a href="/live/students/listReports.php?student_id=123">Reports A</a>' +
+    '<a href="/live/students/listReports.php?student_id=456">Reports B</a>';
+  assert.equal(schoolReportsURL(competing), null);
+});
+
+test('a valid HTML response without timetable or navigation is classified without exposing page text', async () => {
+  const secret = 'Example private school HTML';
+  for (const [html, reason] of [
+    ['<html><h1>Student Reports</h1><p>' + secret + '</p></html>', 'course-layout'],
+    ['<html><h1>Other content</h1><p>' + secret + '</p></html>', 'portal-page'],
+  ]) {
+    const fakeFetch = async (_url, options) => new Response(options.method === 'POST' ? html : loginHTML,
+      { headers: { 'content-type': 'text/html' } });
+    await assert.rejects(fetchSchoolGrades(credentials, signal(), fakeFetch), error =>
+      error.code === 'partial' && error.stage === 'course-table' &&
+      error.reason === reason && !String(error.message).includes(secret));
+  }
 });
