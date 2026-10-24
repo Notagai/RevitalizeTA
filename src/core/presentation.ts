@@ -42,6 +42,7 @@ export function syncMessage(state: SyncState): string {
     cookie: 'Invalid school session cookie',
     parser: 'School HTML did not match a supported layout',
     'native-exception': 'Native request or response reader failed',
+    'login-method': 'School login form requires a different sign-in method',
   };
   const stage = state.problem ? ` Failed during: ${stages[state.problem]}.` : '';
   const reason = state.problemCode ? ` Detail: ${reasons[state.problemCode]}.` : '';
