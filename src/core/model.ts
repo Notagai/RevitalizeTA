@@ -26,7 +26,7 @@ export type Course = {
   reportedAverage: number | null;
   /** Exact course-level label; never convert this into a purported official %. */
   reportedLevel?: AchievementLevel;
-  categories: { id: string; name: string; weight: number; reportedAverage?: number | null }[];
+  categories: { id: string; name: string; weight: number; reportedAverage?: number | null; reportedLevel?: AchievementLevel }[];
   assessments: Assessment[];
   /** Course marks may load even when the private assessment HTML is unsupported. */
   reportProblem?: 'report-cell' | 'report-assignment' | 'report-weighting' | 'report-layout' | 'report-normalization';
@@ -69,8 +69,11 @@ export function parseSnapshot(value: unknown): Snapshot {
     const c = object(value);
     const categories = list(c.categories, value => {
       const cat = object(value);
+      const reportedLevel = cat.reportedLevel === undefined ? undefined : validLevel(cat.reportedLevel) ? cat.reportedLevel : fail();
+      if (reportedLevel && (root.source !== 'teachassist' || cat.reportedAverage !== null && cat.reportedAverage !== undefined)) fail();
       return { id: text(cat.id), name: text(cat.name), weight: number(cat.weight, 0, 100),
-        ...(cat.reportedAverage === undefined ? {} : { reportedAverage: cat.reportedAverage === null ? null : number(cat.reportedAverage, 0, 100) }) };
+        ...(cat.reportedAverage === undefined ? {} : { reportedAverage: cat.reportedAverage === null ? null : number(cat.reportedAverage, 0, 100) }),
+        ...(reportedLevel === undefined ? {} : { reportedLevel }) };
     });
     unique(categories);
     if (categories.length) {
@@ -168,9 +171,11 @@ export function calculatedAverage(course: Course, overrides: LevelOverrides = {}
     const entries = course.assessments.filter(a => a.category === category.id && a.weight > 0)
       .map(a => ({ a, grade: assessmentPercent(a, overrides) }))
       .filter((entry): entry is { a: Assessment; grade: number } => entry.grade !== null);
-    if (!entries.length) continue;
-    const perCategoryTotal = entries.reduce((total, entry) => total + (entry.a.weight > 0 ? entry.a.weight : 1), 0);
-    const mean = entries.reduce((total, entry) => total + entry.grade * (entry.a.weight > 0 ? entry.a.weight : 1), 0) / perCategoryTotal;
+    if (!entries.length && !category.reportedLevel && category.reportedAverage == null) continue;
+    const perCategoryTotal = entries.reduce((total, entry) => total + entry.a.weight, 0);
+    const mean = perCategoryTotal ?
+      entries.reduce((total, entry) => total + entry.grade * entry.a.weight, 0) / perCategoryTotal :
+      category.reportedAverage ?? (category.reportedLevel ? levelRange(category.reportedLevel).midpoint : 0);
     const weight = knownWeights ? category.weight : perCategoryTotal;
     if (weight <= 0) continue;
     sum += mean * weight;
