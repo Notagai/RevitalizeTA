@@ -1,3 +1,4 @@
+import { parseLevel, parseLevelMark, type AchievementLevel } from './levels.ts';
 import { load } from 'cheerio/slim';
 import { normalizeTAResponse } from './ta-api.ts';
 import { SyncError } from './sync.ts';
@@ -91,7 +92,7 @@ export function schoolCoursePageKind(html: string): 'report-page' | 'login-page'
 
 export type SchoolCourse = {
   code: string; name: string; block: string; room: string; start_time: string; end_time: string;
-  overall_mark: number | 'N/A'; isFinal: boolean; isMidterm: boolean; url: URL | null;
+  overall_mark: number | 'N/A'; overall_level?: AchievementLevel; isFinal: boolean; isMidterm: boolean; url: URL | null;
 };
 const isoDate = /\b\d{4}-\d{2}-\d{2}\b/g;
 const courseTitle = /^(.{2,130}?)\s*:\s*(.+?)(?=\s+Block\s*:|$)/i;
@@ -159,17 +160,20 @@ export function parseSchoolCourses(html: string): SchoolCourse[] {
     const markText = values.slice(1).join(' ');
     const mark = markText.match(/(?:current\s*mark\s*=|(?:FINAL|MIDTERM)\s*MARK\s*:)\s*(\d+(?:\.\d+)?)\s*%/i);
     if (mark && Number(mark[1]) > 100) return invalid();
+    const level = !mark ? parseLevelMark(markText) ??
+      values.slice(1).map(value => parseLevel(value)).find((value): value is AchievementLevel => value !== null) : null;
     const noGrade = !markText || /(?:please\s+see\s+teacher\s+for\s+current\s+status|no\s+mark|not\s+available|n[/]a|see\s+teacher|no\s+grade)/i.test(markText);
     const link = cells.find('a[href]').toArray().map(el => $(el).attr('href') ?? '')
       .find(href => /^((?:\.\.\/)*viewReport\.php|\/live\/students\/viewReport\.php|https:\/\/ta\.yrdsb\.ca\/live\/students\/viewReport\.php)\?/i.test(href));
     // A course without a current grade is valid. A grade-shaped page with a
     // nonnumeric status is not silently converted to a grade.
     const looksGraded = /(?:current\s*mark|final\s*mark|midterm\s*mark)\s*[:=]/i.test(markText);
-    if (!mark && looksGraded && !noGrade) return invalid();
+    if (!mark && !level && looksGraded && !noGrade) return invalid();
     courses.push({
       ...parsedTitle, block: block?.[1] ?? '0', room,
       start_time: dates[0], end_time: dates[1],
       overall_mark: mark ? Number(mark[1]) : 'N/A',
+      ...(level ? { overall_level: level } : {}),
       isFinal: /FINAL\s+MARK/i.test(markText), isMidterm: /MIDTERM\s+MARK/i.test(markText),
       url: link ? schoolCourseURL(link) : null,
     });
@@ -289,26 +293,29 @@ export function parseSchoolReport(html: string) {
       const value = text(cell);
       if (!value) return;
       const points = value.match(/(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)/);
+      const levelToken = value.match(/\b(?:achievement\s+)?level\s*[:=]?\s*([1-4])\s*([+-])?(?=\s|$|[;,])/i);
+      const level = levelToken ? parseLevel('Level ' + levelToken[1] + (levelToken[2] ?? '')) : null;
       const weight = value.match(/\bweight\s*=\s*(\d+(?:\.\d+)?)/i);
       const noWeight = /\bno\s+weight\b/i.test(value);
       const pending = /not\s*finished|unfinished|ungraded|pending|N\/A/i.test(value);
       const exempt = /\bexempt\b|\bno\s+mark\b/i.test(value);
       const missing = /\bmissing\b/i.test(value);
-      if (!points && !pending && !exempt && !missing) {
+      if (!points && !level && !pending && !exempt && !missing) {
         // Never quietly drop a school grade with an unfamiliar score format.
         if (weight || noWeight || /\d\s*%/.test(value)) return reportInvalid('report-cell');
         return;
       }
       if ((!weight && !noWeight) || !weight_table[category]) return reportInvalid('report-cell');
-      const earned = points ? Number(points[1]) : null;
-      const possible = points ? Number(points[2]) : 0;
+      const earned = points && !level ? Number(points[1]) : null;
+      const possible = points && !level ? Number(points[2]) : 0;
       const weighting = weight ? Number(weight[1]) : 0;
       if (!Number.isFinite(possible) || !Number.isFinite(weighting) || weighting > 100
         || earned !== null && (earned > possible || possible <= 0)) return reportInvalid('report-cell');
       const existing = assignment[category] as Record<string, unknown>[] | undefined;
       if (existing && existing.length >= 20) return reportInvalid('report-assignment');
       const component = { get: pending || exempt || missing ? null : earned, total: possible,
-        weight: weighting, finished: !pending && !missing, exempt, missing };
+        weight: weighting, finished: !pending && !missing, exempt, missing,
+        ...(!pending && !exempt && !missing && level ? { level } : {}) };
       if (existing) existing.push(component); else assignment[category] = [component];
       parts++;
     });
