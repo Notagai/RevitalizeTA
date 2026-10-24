@@ -5,7 +5,7 @@ import { createRequire } from 'node:module';
 import { abortable, boundedText } from '../src/core/http.ts';
 import { createSchoolAdapter, validSchoolCredentials } from '../src/core/school-auth.ts';
 import { RequestLimiter } from '../src/core/ta-api.ts';
-import { parseSchoolCourses, parseSchoolReport, schoolCourseURL, schoolSnapshot } from '../src/core/school-parser.ts';
+import { parseSchoolCourses, parseSchoolReport, schoolCourseURL, schoolSnapshot, schoolLoginForm } from '../src/core/school-parser.ts';
 import { fetchSchoolGrades } from '../src/core/direct-school.ts';
 import { SyncController } from '../src/core/sync.ts';
 import { credentials, loginHTML, courseHTML, compactCourseHTML, reportHTML, mockSchool } from './fixtures/school-html.mjs';
@@ -271,4 +271,58 @@ test('Expo Android 307 and any auto-followed response still fail closed', async 
   Object.defineProperty(response, 'redirected', { value: true });
   await assert.rejects(fetchSchoolGrades(credentials, signal(), async () => response),
     error => error.code === 'partial' && error.reason === 'redirect');
+});
+
+test('official login form action is resolved on-device but constrained to allowlisted HTTPS POST targets', () => {
+  const form = '<html><form action="/yrdsb/index.php" method="post">' +
+    '<input type="hidden" name="subject_id" value="0">' +
+    '<input name="password" type="password"></form></html>';
+  assert.equal(schoolLoginForm(form).action.href, 'https://ta.yrdsb.ca/yrdsb/index.php');
+  assert.equal(schoolLoginForm(form).subjectId, '0');
+  for (const action of ['https://evil.example/login', '//evil.example/login',
+    'https://ta.yrdsb.ca/live/students/delete.php', '/live/index.php?password=anything']) {
+    assert.throws(() => schoolLoginForm(form.replace('/yrdsb/index.php', action)), { code: 'partial' });
+  }
+  assert.throws(() => schoolLoginForm(form.replace('method="post"', 'method="get"')),
+    error => error.code === 'partial' && error.reason === 'login-method');
+});
+
+test('official login form can post to /yrdsb/index.php and load grades via safe redirect', async () => {
+  const calls = [];
+  const loginForm = '<form action="/yrdsb/index.php" method="post">' +
+    '<input name="password" type="password"></form>';
+  const fetchImpl = async (url, options) => {
+    calls.push({ url: String(url), method: options.method });
+    if (options.method === 'POST') {
+      const redirected = new Response(null, { status: 302, headers: {
+        location: '/live/students/listReports.php?student_id=123456789',
+        'set-cookie': 'session_token=synthetic-session; Secure; HttpOnly',
+      } });
+      Object.defineProperty(redirected, 'redirected', { value: true });
+      Object.defineProperty(redirected, 'url', { value: String(url) });
+      return redirected;
+    }
+    const html = calls.length === 1 ? loginForm :
+      String(url).includes('viewReport.php') ? reportHTML : compactCourseHTML();
+    return new Response(html, { headers: { 'content-type': 'text/html' } });
+  };
+  const result = await fetchSchoolGrades(credentials, signal(), fetchImpl);
+  assert.equal(result.courses.length, 2);
+  assert.equal(calls[1].url, 'https://ta.yrdsb.ca/yrdsb/index.php');
+  assert.equal(calls[1].method, 'POST');
+  assert.equal(calls[2].url, 'https://ta.yrdsb.ca/live/students/listReports.php?student_id=123456789');
+});
+
+test('course parser handles an unmarked timetable table surrounded by navigation and headers', () => {
+  const html = '<html><table><tr><td>Navigation</td><td>Teachers</td><td>Courses</td></tr></table>' +
+    '<div><table><tr><th>My reports</th></tr>' +
+    '<tr><td>ENG2D-01 : English Block: 3 - rm. 216</td><td>2026-09-08 ~ 2027-01-29</td>' +
+    '<td><a href="viewReport.php?subject_id=123456&amp;student_id=987654321&amp;school_id=12">current mark = 82%</a></td></tr>' +
+    '</table></div></html>';
+  const courses = parseSchoolCourses(html);
+  assert.equal(courses.length, 1);
+  assert.equal(courses[0].code, 'ENG2D-01');
+  assert.equal(courses[0].room, '216');
+  assert.equal(courses[0].block, '3');
+  assert.equal(courses[0].overall_mark, 82);
 });
