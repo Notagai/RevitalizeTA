@@ -41,13 +41,13 @@ export function schoolLoginForm(html: string): { action: URL; subjectId: string 
   const method = (form.attr('method') ?? 'post').trim().toLowerCase();
   if (method !== 'post') throw new SyncError('partial', undefined, 'login-method');
   const declared = (form.attr('action') ?? '').trim();
-  if (declared.length > 1000 || /[\\\\\u0000-\u001F]/.test(declared)) return invalid();
+  if (declared.length > 1000 || /[\\\u0000-\u001F]/.test(declared)) return invalid();
   const action = new URL(declared || '/live/index.php', SCHOOL_ORIGIN + '/live/index.php');
   if (action.origin !== SCHOOL_ORIGIN || action.username || action.password || action.hash
     || !['/live/index.php', '/yrdsb/index.php'].includes(action.pathname)
     || action.search) return invalid();
   const rawId = form.find('input[name="subject_id"]').first().attr('value') ?? '0';
-  if (!/^\\d{1,15}$/.test(rawId)) return invalid();
+  if (!/^\d{1,15}$/.test(rawId)) return invalid();
   return { action, subjectId: rawId };
 }
 
@@ -80,8 +80,9 @@ export function parseSchoolCourses(html: string): SchoolCourse[] {
     const titleText = clean(cells.eq(0).text());
     const title = titleText.match(/^([^:]+)\s*:\s*(.+?)(?=\s+Block:|$)/i);
     if (!title) return invalid();
-    const blockText = cells.slice(0, Math.min(2, cells.length - 1)).toArray()
-      .map(cell => clean($(cell).text())).join(' ');
+    const blockText = cells.length >= 5
+      ? clean(cells.eq(0).text()) + ' ' + clean(cells.eq(1).text())
+      : clean(cells.eq(0).text());
     const block = blockText.match(/\bBlock:\s*P?\s*([1-5])\b/i);
     const room = blockText.match(/\brm\.\s*([^,;]+?)(?:\s+Block:|$)/i)?.[1]?.trim() ?? 'N/A';
     const dateText = cells.slice(1, -1).toArray().map(cell => clean($(cell).text())).join(' ');
