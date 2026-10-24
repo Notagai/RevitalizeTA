@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { Link, router, useFocusEffect } from 'expo-router';
 import { ActivityIndicator, Image, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SCHOOL_LOGIN_ENABLED } from '../core/integration';
+import { currentTableDebugCapture } from '../core/debug-table';
 import { validSchoolCredentials } from '../core/school-auth';
 import { syncMessage } from '../core/presentation';
 import { useApp } from '../state/AppProvider';
@@ -153,6 +154,11 @@ export default function SignIn() {
         {failed ? <View accessibilityLiveRegion="polite" style={[styles.errorBox, { borderColor: colors.danger }]}>
           <Text style={[styles.errorTitle, { color: colors.danger }]}>Could not sign in</Text>
           <Text selectable style={[styles.errorMessage, { color: colors.text }]}>{syncMessage(sync)}</Text>
+          {currentTableDebugCapture() ? <Pressable accessibilityRole="button" accessibilityLabel="View redacted school HTML"
+            onPress={() => router.push('/debug-table')}
+            style={[styles.debugLink, { borderColor: colors.accent }]}>
+            <Text style={{ color: colors.accent, fontWeight: '700' }}>View redacted table HTML →</Text>
+          </Pressable> : null}
         </View> : null}
       </View> : <View style={[styles.formCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <Text style={[styles.unavailable, { color: colors.text }]}>
@@ -201,6 +207,7 @@ const styles = StyleSheet.create({
   errorBox: { gap: 6, borderWidth: 1, borderRadius: 14, padding: 14 },
   errorTitle: { fontSize: 14, fontWeight: '800' },
   errorMessage: { fontSize: 13, lineHeight: 20 },
+  debugLink: { minHeight: 48, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, justifyContent: 'center', marginTop: 8 },
   unavailable: { fontSize: 15, lineHeight: 23 },
   footer: { alignItems: 'center', gap: 9, paddingBottom: 10 },
   footerText: { fontSize: 12 },
