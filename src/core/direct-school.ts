@@ -1,4 +1,5 @@
 import { abortable, boundedText } from './http.ts';
+import { clearTableDebugCapture, rememberTableDebugPage } from './debug-table.ts';
 import { validSchoolCredentials, type Credentials } from './school-auth.ts';
 import { SyncError, type SchoolStage } from './sync.ts';
 import { parseSchoolCourses, parseSchoolReport, schoolCourseURL, schoolSnapshot, schoolLoginForm, schoolReportsURL, schoolCoursePageKind, schoolTimetableFailure, type SchoolCourse } from './school-parser.ts';
@@ -8,6 +9,7 @@ const LOGIN = 'https://ta.yrdsb.ca/live/index.php';
 /** No shared cookie jar, credentials in URLs, browser execution, or arbitrary hosts. */
 export async function fetchSchoolGrades(credentials: Credentials, signal: AbortSignal, fetchImpl: typeof fetch = fetch) {
   if (!validSchoolCredentials(credentials)) throw new SyncError('auth');
+  clearTableDebugCapture();
   const cookies = new Map<string, string>();
   let totalBytes = 0;
   async function request(url: URL, body?: URLSearchParams, redirects = 0): Promise<string> {
@@ -84,6 +86,9 @@ export async function fetchSchoolGrades(credentials: Credentials, signal: AbortS
       new URLSearchParams({ username: credentials.username, password: credentials.password,
         subject_id: form.subjectId, submit: 'Login' })));
     const parseTimetable = (page: string): SchoolCourse[] => {
+      // Only the synthetic, redacted structure is held in memory. Never save
+      // or expose the school's original HTML, cookies, or credentials.
+      rememberTableDebugPage(page, 'course-list');
       try { return parseSchoolCourses(page); }
       catch (error) {
         if (error instanceof SyncError && error.code === 'partial') {
@@ -118,7 +123,11 @@ export async function fetchSchoolGrades(credentials: Credentials, signal: AbortS
     const reports: (SchoolCourse & ReturnType<typeof parseSchoolReport>)[] = [];
     for (const course of courses) {
       const report = course.url
-        ? await atStage('course-report', async () => parseSchoolReport(await request(course.url!)))
+        ? await atStage('course-report', async () => {
+          const raw = await request(course.url!);
+          rememberTableDebugPage(raw, 'course-report');
+          return parseSchoolReport(raw);
+        })
         : { assignments: [], weight_table: {} };
       reports.push({ ...course, ...report });
     }
