@@ -202,24 +202,51 @@ export function parseSchoolReport(html: string) {
     return Number.isFinite(number) && number <= 100 ? number : null;
   };
 
-  // Legacy TeachAssist exposes category colors on the rows.
-  $('table[cellpadding="5"] tr').each((_i, row) => {
+  // Weightings exist in multiple real TeachAssist variants:
+  //  - legacy: table cellpadding="5" with colored rows and four cells
+  //  - current: a separate 90%-wide table, often with a heading row above
+  //    "Category", then three cells per category, with bgcolor on each tr.
+  // Some current reports leave both weighting columns blank; that means
+  // weight data is NOT published, never that every category really weighs 0%.
+  const weightedTables = $('table').filter((_i, table) => {
+    const directRows = $(table).children('tr,tbody,thead,tfoot').find('tr').addBack('tr');
+    const keys = new Set<string>();
+    directRows.each((_j, row) => {
+      const key = colors[($(row).attr('bgcolor') ?? '').replace('#', '').toLowerCase()];
+      if (key && $(row).children('td').length >= 3) keys.add(key);
+    });
+    return keys.size >= 2;
+  });
+
+  weightedTables.first().find('tr').each((_i, row) => {
     const category = colors[($(row).attr('bgcolor') ?? '').replace('#', '').toLowerCase()];
     if (!category) return;
     const cells = $(row).children('td').map((_j, cell) => text(cell)).get();
+    if (cells.length < 3 || cells.length > 5 || weight_table[category]) return invalid();
     const values = cells.slice(1).map(percentValue);
-    if (category === 'F' && values.length === 2) values.unshift(0);
-    if (values.length !== 3 || values[1] === null || values.some((v, i) => i !== 2 && v === null)
-      || weight_table[category]) return invalid();
-    weight_table[category] = { W: values[0] ?? 0, CW: values[1], SA: values[2] };
+    const allBlank = cells.slice(1).every(value => value === '' || /^N\/A$/i.test(value));
+    if (values.some((v, i) => v === null && !allBlank && !/^N\/A$/i.test(cells[i + 1]) && cells[i + 1] !== '')) return invalid();
+    if (allBlank) {
+      // Zeroes are a sentinel for unpublished category weights. The UI must
+      // render "Not published" rather than an invented percentage.
+      weight_table[category] = { W: 0, CW: 0, SA: null };
+      return;
+    }
+    if (values.length === 2) {
+      weight_table[category] = { W: values[0] ?? 0, CW: values[0] ?? 0, SA: values[1] };
+    } else {
+      const maybeFinal = category === 'F' && values.length === 2;
+      if (maybeFinal) values.unshift(0);
+      const weight = values.length >= 3 ? values[1] : values[0];
+      if (weight === null || weight === undefined) return invalid();
+      weight_table[category] = { W: values[0] ?? 0, CW: weight, SA: values.length >= 3 ? values[2] : null };
+    }
   });
 
-  // Other TeachAssist layouts identify the weighting table by its headings,
-  // not the bgcolor attributes on the rows. Never mistake assessment tables
-  // for course weightings.
+  // Older reports put text headings and colored cells instead of colored rows.
   if (!Object.keys(weight_table).length) {
     const tables = $('table').filter((_i, table) => {
-      const headings = text($(table).find('tr').first()).toLowerCase();
+      const headings = $(table).find('tr').slice(0, 3).map((_j, row) => text(row)).get().join(' ').toLowerCase();
       return /categor(y|ies)/.test(headings) && /course\s*weighting/.test(headings);
     });
     tables.first().find('tr').each((_i, row) => {
@@ -233,6 +260,16 @@ export function parseSchoolReport(html: string) {
       const achievement = percentValue(values[cells.length >= 4 ? 3 : 2]);
       if (weighted === null || weight_table[category]) return invalid();
       weight_table[category] = { CW: weighted, W: current ?? weighted, SA: achievement };
+    });
+  }
+
+  // If an assignment table has recognizable colored score cells but the
+  // weighting table is absent, retain categories with unknown (0) weights
+  // rather than discarding otherwise valid assessment details.
+  if (!Object.keys(weight_table).length) {
+    $('table[width="100%"] td[bgcolor]').each((_i, cell) => {
+      const category = colors[($(cell).attr('bgcolor') ?? '').replace('#', '').toLowerCase()];
+      if (category && !weight_table[category]) weight_table[category] = { W: 0, CW: 0, SA: null };
     });
   }
 
