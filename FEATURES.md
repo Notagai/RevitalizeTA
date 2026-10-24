@@ -19,11 +19,13 @@
 - [x] Get rid of Liquid Glass
 - [ ] Have it actually pull grades through TA API and get rid of "demo grades" features; replace with normal features.
 - [x] Rate limit and secure the requests so that there can be no malicious script injection
-- [] Get rid of the useless text in the sign in. Make it a more simple Sign In with the logo, Sign In text, display name, username, password.
-- [] Fix the sign in and grab grades.
-Implementation notes (2026-10-23, updated for the security/login request):
+- [x] Simplify and redesign sign-in with a logo, clear title, display name, student ID, password, and accessible error state.
+- [ ] Verify real school sign-in and grade retrieval on a physical device or emulator.
+Implementation notes (2026-10-24):
 
-- The UI, calculation and sorting items above remain implemented. Teacher/date/credit availability depends on the school response; missing values are explicit.
-- School-account login is now implemented using the app server and the official school form. The request for the unofficial TA API is intentionally left unchecked: its insecure credential transport was permanently disabled and replaced. See SEC_FIXES.md for the audit, direct-login implementation, production configuration and validation limits.
-- Production requires the deployed Expo app server and shared Redis limiter; no hosting or Redis resource was provisioned. A real school-account login and native device testing remain unverified. Tests use invented data only.
-- Previous-refresh comparisons, credentials and course weights are session-only. The weighted estimate excludes unavailable and zero-weight entries.
+- The sign-in layout has been simplified and visually updated on the mainappwork branch.
+- Login and grades are retrieved directly on-device over HTTPS; the earlier app server and Redis deployment notes no longer apply.
+- Course parsing accepts several timetable layouts. When a school page contains a validated link to its student-reports page, the app follows one same-origin GET request.
+- Authentication against a real YRDSB account remains unverified. The app never places passwords in URLs or logs response HTML.
+- A failed login now distinguishes an unexpected portal page from an unsupported student-reports layout. Tests use synthetic account data only.
+- Previous-refresh comparisons, credentials and course weights remain session-only. The weighted estimate excludes unavailable and zero-weight entries.
