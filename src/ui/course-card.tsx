@@ -3,6 +3,8 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { Course } from '../core/model';
 import { gradeDelta } from '../core/grades';
 import { percent } from '../core/presentation';
+import { levelLabel, levelBandLabel } from '../core/levels';
+import { calculatedAverage } from '../core/model';
 import { Heading } from './components';
 import { Badge, GradeBar, GradeDelta } from './grade-visuals';
 import { useTheme } from './theme';
@@ -11,13 +13,15 @@ import { GradeReveal } from './grade-reveal';
 
 export function CourseCard({ course, previousAverage }: { course: Course; previousAverage?: number | null }) {
   const { colors } = useTheme();
-  const { isGradeVisible } = useApp();
+  const { isGradeVisible, levelOverrides } = useApp();
   const visible = isGradeVisible(course.id);
+  const estimated = calculatedAverage(course, levelOverrides[course.id]);
+  const gradeLabel = course.reportedLevel ? levelLabel(course.reportedLevel) : percent(course.reportedAverage);
   const missing = course.assessments.filter(a => a.status === 'missing').length;
   const location = `P${course.period ?? '—'} - ${course.room ? 'Rm. ' + course.room : 'Room unavailable'}`;
   return <View style={[styles.course, { borderColor: colors.border, backgroundColor: colors.card }]}>
     <Link href={{ pathname: '/course/[id]', params: { id: course.id } }} asChild>
-      <Pressable accessibilityRole="link" accessibilityLabel={`${course.code}, ${course.name}. ${course.teacher ?? 'Teacher unavailable'}. ${location}. ${visible ? 'Reported average ' + percent(course.reportedAverage) : 'Grades hidden'}. Open assessments.`}
+      <Pressable accessibilityRole="link" accessibilityLabel={`${course.code}, ${course.name}. ${course.teacher ?? 'Teacher unavailable'}. ${location}. ${visible ? 'Reported grade ' + gradeLabel : 'Grades hidden'}. Open assessments.`}
         style={({ pressed }) => ({ opacity: pressed ? 0.72 : 1, gap: 12 })}>
         <View style={[styles.stripe, { backgroundColor: colors.accent }]} />
         <View style={[styles.row, { flexWrap: 'wrap' }]}>
@@ -26,10 +30,18 @@ export function CourseCard({ course, previousAverage }: { course: Course; previo
         </View>
         <View style={[styles.row, { alignItems: 'flex-start', flexWrap: 'wrap' }]}>
           <View style={{ flex: 1, minWidth: 130 }}><Heading>{course.name}</Heading></View>
-          <View style={{ alignItems: 'flex-end', gap: 3 }}><Text style={[styles.grade, { color: colors.accent }]}>{!visible ? 'Hidden' : course.reportedAverage === null ? '—' : percent(course.reportedAverage)}</Text>
-            {visible ? <GradeDelta value={gradeDelta(course.reportedAverage, previousAverage)} /> : null}</View>
+          <View style={{ alignItems: 'flex-end', gap: 3 }}><Text style={[styles.grade, { color: colors.accent }]}>{!visible ? 'Hidden' : course.reportedLevel ? levelLabel(course.reportedLevel) : course.reportedAverage === null ? '—' : percent(course.reportedAverage)}</Text>
+            {visible && course.reportedLevel ? <Text style={{ color: colors.muted, fontSize: 11 }}>
+              {levelBandLabel(course.reportedLevel)} · official range
+            </Text> : null}
+            {visible && !course.reportedLevel ? <GradeDelta value={gradeDelta(course.reportedAverage, previousAverage)} /> : null}
+          </View>
         </View>
-        {visible ? <GradeBar value={course.reportedAverage} label={`${course.name} reported grade`} /> : null}
+        {visible && !course.reportedLevel ? <GradeBar value={course.reportedAverage} label={`${course.name} reported grade`} /> : null}
+        {visible && course.reportedLevel && estimated !== null ?
+          <Text style={{ color: colors.muted, fontSize: 12 }}>
+            ~{percent(estimated)} estimated from available assessments
+          </Text> : null}
         {visible && missing > 0 ? <Badge label={`${missing} missing`} alert /> : null}
       </Pressable>
     </Link>
