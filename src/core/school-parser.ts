@@ -48,7 +48,10 @@ export function parseSchoolCourses(html: string): SchoolCourse[] {
   table.find('tr').each((_index, row) => {
     const cells = $(row).children('td');
     const rowText = clean($(row).text());
-    if (!rowText || /^(?:Course\s*Name|Course\s*Info|Subject)\b/i.test(rowText)
+    const firstCellText = clean(cells.eq(0).text());
+    // Cheerio joins adjacent table-cell text without spaces (NameBlockStart...).
+    // Identify headings from their own cell, not the concatenated row text.
+    if (!rowText || /^(?:Course\s*Name|Course\s*Info|Subject)$/i.test(firstCellText)
       || /No (?:courses|subjects)/i.test(rowText)) return;
     // A heading or inactive table row is not a course.
     const isCompact = cells.length === 3;
