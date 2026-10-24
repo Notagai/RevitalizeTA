@@ -1,4 +1,4 @@
-import { memo, useEffect, useState } from 'react';
+import { memo, useState } from 'react';
 import { Text, TextInput, View } from 'react-native';
 import type { Assignment } from '../core/grades';
 import type { Assessment, Course } from '../core/model';
@@ -16,7 +16,6 @@ function LevelGradeEditor({ course, part }: { course: Course; part: Assessment }
   const { midpoint, min, max } = levelRange(level);
   const saved = levelOverrides[course.id]?.[part.id];
   const [draft, setDraft] = useState(saved === undefined ? '' : String(saved));
-  useEffect(() => { setDraft(saved === undefined ? '' : String(saved)); }, [saved]);
   const parsed = Number(draft);
   const valid = draft.trim() !== '' && /^(?:\d{1,3}(?:\.\d{1,2})?)$/.test(draft.trim())
     && validLevelOverride(level, parsed);
@@ -39,7 +38,7 @@ function LevelGradeEditor({ course, part }: { course: Course; part: Assessment }
           borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, color: colors.text }} />
       <Action label="Apply" disabled={!valid || saved === parsed}
         onPress={() => setLevelAssignmentGrade(course.id, part.id, parsed)} />
-      {saved !== undefined ? <Action label="Reset" onPress={() => setLevelAssignmentGrade(course.id, part.id, null)} /> : null}
+      {saved !== undefined ? <Action label="Reset" onPress={() => { setLevelAssignmentGrade(course.id, part.id, null); setDraft(''); }} /> : null}
     </View>
     {draft && !valid ? <Text style={{ color: colors.danger, fontSize: 12 }}>
       Enter a percentage from {min} to {max}.
