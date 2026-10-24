@@ -218,3 +218,57 @@ test('native redirects identify a safe reason without logging the target URL', a
     error => error.code === 'partial' && error.stage === 'initial-page' && error.reason === 'redirect',
   );
 });
+
+test('Expo Android manual 302 login redirect is followed only by an allowed GET', async () => {
+  const calls = [];
+  const mockFetch = async (url, options) => {
+    calls.push({ url: String(url), options });
+    const path = new URL(url).pathname;
+    let response;
+    if (options.method === 'POST') {
+      response = new Response(null, { status: 302, headers: {
+        location: '/live/index.php?subject_id=0',
+        'set-cookie': 'PHPSESSID=post-session; Secure; HttpOnly; Path=/live/',
+      } });
+      // On Android Expo SDK 58, redirected is true on the raw 302 response.
+      Object.defineProperty(response, 'redirected', { value: true });
+      Object.defineProperty(response, 'url', { value: String(url) });
+    } else {
+      response = new Response(path.endsWith('viewReport.php') ? reportHTML :
+        String(url).includes('subject_id=0') ? courseHTML() : loginHTML,
+        { headers: { 'content-type': 'text/html', 'set-cookie': 'PHPSESSID=mock-session; Secure' } });
+      Object.defineProperty(response, 'url', { value: String(url) });
+    }
+    return response;
+  };
+  const snapshot = await fetchSchoolGrades(credentials, signal(), mockFetch);
+  assert.equal(snapshot.source, 'teachassist');
+  assert.equal(snapshot.courses[0].reportedAverage, 85);
+  assert.deepEqual(calls.map(c => c.options.method), ['GET', 'POST', 'GET', 'GET']);
+  assert.equal(calls[2].url, 'https://ta.yrdsb.ca/live/index.php?subject_id=0');
+  assert.equal(calls[2].options.headers.Cookie, 'PHPSESSID=post-session');
+  for (const call of calls) {
+    assert.equal(new URL(call.url).origin, 'https://ta.yrdsb.ca');
+    assert.equal(call.options.redirect, 'manual');
+  }
+});
+
+test('Expo Android 307 and any auto-followed response still fail closed', async () => {
+  for (const status of [307, 308]) {
+    let requestCount = 0;
+    await assert.rejects(fetchSchoolGrades(credentials, signal(), async (url, options) => {
+      requestCount++;
+      if (options.method === 'GET') return new Response(loginHTML, { headers: { 'content-type': 'text/html' } });
+      const response = new Response(null, { status, headers: { location: 'https://evil.example/' } });
+      Object.defineProperty(response, 'redirected', { value: true });
+      Object.defineProperty(response, 'url', { value: String(url) });
+      return response;
+    }), error => error.code === 'partial' && error.stage === 'login-submission'
+        && error.reason === 'redirect');
+    assert.equal(requestCount, 2);
+  }
+  const response = new Response(courseHTML(), { headers: { 'content-type': 'text/html' } });
+  Object.defineProperty(response, 'redirected', { value: true });
+  await assert.rejects(fetchSchoolGrades(credentials, signal(), async () => response),
+    error => error.code === 'partial' && error.reason === 'redirect');
+});
