@@ -66,7 +66,14 @@ export function parseSnapshot(value: unknown): Snapshot {
         ...(cat.reportedAverage === undefined ? {} : { reportedAverage: cat.reportedAverage === null ? null : number(cat.reportedAverage, 0, 100) }) };
     });
     unique(categories);
-    if (categories.length && Math.abs(categories.reduce((sum, cat) => sum + cat.weight, 0) - 100) > 0.001) fail();
+    if (categories.length) {
+      const totalWeight = categories.reduce((sum, cat) => sum + cat.weight, 0);
+      // TeachAssist can publish assessment marks without a category weighting
+      // breakdown. An all-zero set is an explicit "weights unavailable"
+      // sentinel, not a mathematical set of 0% weighted categories.
+      const unknownWeights = root.source === 'teachassist' && totalWeight === 0;
+      if (!unknownWeights && Math.abs(totalWeight - 100) > 0.001) fail();
+    }
     const assessments = list<Assessment>(c.assessments, value => {
       const a = object(value);
       const status = a.status;
