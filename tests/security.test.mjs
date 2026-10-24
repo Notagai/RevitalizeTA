@@ -190,3 +190,31 @@ test('failed stages expose only fixed diagnostic labels', async () => {
   await assert.rejects(fetchSchoolGrades(credentials, signal(), bad), error =>
     error.code === 'partial' && error.stage === 'course-table' && error.message === 'partial');
 });
+
+test('native response without a readable body reports the failing stage safely', async () => {
+  const response = new Response(loginHTML, { headers: { 'content-type': 'text/html' } });
+  Object.defineProperty(response, 'body', { value: null });
+  await assert.rejects(
+    fetchSchoolGrades(credentials, signal(), async () => response),
+    error => error.code === 'partial' && error.stage === 'initial-page'
+      && error.reason === 'body-stream' && error.message === 'partial',
+  );
+});
+
+test('native transport exceptions never expose raw error messages or account details', async () => {
+  const detail = 'school-password-is-private';
+  await assert.rejects(
+    fetchSchoolGrades(credentials, signal(), async () => { throw new TypeError(detail); }),
+    error => error.code === 'partial' && error.stage === 'initial-page'
+      && error.reason === 'native-exception' && !error.message.includes(detail),
+  );
+});
+
+test('native redirects identify a safe reason without logging the target URL', async () => {
+  const response = new Response(loginHTML, { headers: { 'content-type': 'text/html' } });
+  Object.defineProperty(response, 'redirected', { value: true });
+  await assert.rejects(
+    fetchSchoolGrades(credentials, signal(), async () => response),
+    error => error.code === 'partial' && error.stage === 'initial-page' && error.reason === 'redirect',
+  );
+});
