@@ -30,6 +30,27 @@ export function schoolCourseURL(href: string): URL {
   return url;
 }
 
+/**
+ * Resolve the login form's declared POST destination. Never infer external hosts,
+ * allow credential-bearing GET requests, or trust arbitrary hidden input names.
+ */
+export function schoolLoginForm(html: string): { action: URL; subjectId: string } {
+  const $ = load(html);
+  const form = $('form').filter((_index, el) => $(el).find('input[type="password"], input[name="password"]').length > 0).first();
+  if (!form.length) return { action: new URL(SCHOOL_ORIGIN + '/live/index.php'), subjectId: '0' };
+  const method = (form.attr('method') ?? 'post').trim().toLowerCase();
+  if (method !== 'post') throw new SyncError('partial', undefined, 'login-method');
+  const declared = (form.attr('action') ?? '').trim();
+  if (declared.length > 1000 || /[\\\\\u0000-\u001F]/.test(declared)) return invalid();
+  const action = new URL(declared || '/live/index.php', SCHOOL_ORIGIN + '/live/index.php');
+  if (action.origin !== SCHOOL_ORIGIN || action.username || action.password || action.hash
+    || !['/live/index.php', '/yrdsb/index.php'].includes(action.pathname)
+    || action.search) return invalid();
+  const rawId = form.find('input[name="subject_id"]').first().attr('value') ?? '0';
+  if (!/^\\d{1,15}$/.test(rawId)) return invalid();
+  return { action, subjectId: rawId };
+}
+
 export type SchoolCourse = {
   code: string; name: string; block: string; room: string; start_time: string; end_time: string;
   overall_mark: number | 'N/A'; isFinal: boolean; isMidterm: boolean; url: URL | null;
