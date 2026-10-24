@@ -1,7 +1,7 @@
 import { abortable, boundedText } from './http.ts';
 import { validSchoolCredentials, type Credentials } from './school-auth.ts';
 import { SyncError, type SchoolStage } from './sync.ts';
-import { parseSchoolCourses, parseSchoolReport, schoolCourseURL, schoolSnapshot, schoolLoginForm, type SchoolCourse } from './school-parser.ts';
+import { parseSchoolCourses, parseSchoolReport, schoolCourseURL, schoolSnapshot, schoolLoginForm, schoolReportsURL, schoolCoursePageKind, type SchoolCourse } from './school-parser.ts';
 
 const LOGIN = 'https://ta.yrdsb.ca/live/index.php';
 
@@ -79,7 +79,29 @@ export async function fetchSchoolGrades(credentials: Credentials, signal: AbortS
     const html = await atStage('login-submission', () => request(form.action,
       new URLSearchParams({ username: credentials.username, password: credentials.password,
         subject_id: form.subjectId, submit: 'Login' })));
-    const courses = await atStage('course-table', () => parseSchoolCourses(html));
+    const parseTimetable = (page: string): SchoolCourse[] => {
+      try { return parseSchoolCourses(page); }
+      catch (error) {
+        if (error instanceof SyncError && error.code === 'partial') {
+          const reason = schoolCoursePageKind(page) === 'report-page' ? 'course-layout' : 'portal-page';
+          throw new SyncError('partial', undefined, reason);
+        }
+        throw error;
+      }
+    };
+    let courses: SchoolCourse[];
+    try {
+      courses = await atStage('course-table', () => parseTimetable(html));
+    } catch (error) {
+      if (!(error instanceof SyncError) || error.code !== 'partial') throw error;
+      // A school landing page sometimes links to the student report page rather
+      // than embedding the timetable. Follow one explicitly linked, validated GET.
+      // No credentials are added to the URL and the same session stays in memory.
+      const reportList = schoolReportsURL(html);
+      if (!reportList) throw error;
+      const listing = await atStage('course-table', () => request(reportList));
+      courses = await atStage('course-table', () => parseTimetable(listing));
+    }
     const reports: (SchoolCourse & ReturnType<typeof parseSchoolReport>)[] = [];
     for (const course of courses) {
       const report = course.url
