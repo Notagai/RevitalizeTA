@@ -108,8 +108,12 @@ export class SyncController {
   private async deleteData(status: 'never' | 'auth') {
     this.cancel();
     await this.pending;
+    // Keep only the fixed diagnostic labels across an authentication-driven
+    // sign-out; the previous snapshot and account are still cleared.
+    const diagnostic = status === 'auth'
+      ? { problem: this.state.problem, problemCode: this.state.problemCode } : {};
     this.publish({ ...this.state, status: 'deleting', changes: [] });
-    try { await this.store.clear(); this.publish({ ...initialState, status, problem: status === 'auth' ? this.state.problem : undefined }); return true; }
+    try { await this.store.clear(); this.publish({ ...initialState, status, ...diagnostic }); return true; }
     catch { this.publish({ ...this.state, status: 'storage' }); return false; }
   }
 }
