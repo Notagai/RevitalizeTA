@@ -19,36 +19,37 @@ export async function fetchSchoolGrades(credentials: Credentials, signal: AbortS
     }), signal);
     // A native implementation must not auto-follow redirects; reject changed final URLs.
     // Explicit redirect handling below is restricted to the official school origin.
-    if (response.redirected || (response.url && response.url !== url.href)) throw new SyncError('partial');
+    if (response.redirected || (response.url && response.url !== url.href)) throw new SyncError('partial', undefined, 'redirect');
     const setCookies = response.headers.getSetCookie?.() ?? response.headers.get('set-cookie')?.split(/,\s*(?=[A-Za-z0-9_-]+=)/) ?? [];
     for (const cookie of setCookies) {
-      if (cookie.length > 4096) throw new SyncError('partial');
+      if (cookie.length > 4096) throw new SyncError('partial', undefined, 'cookie');
       const domain = cookie.match(/;\s*domain=([^;]+)/i)?.[1].replace(/^\./, '').toLowerCase();
       if (domain && domain !== 'ta.yrdsb.ca') continue;
       const pair = cookie.match(/^([A-Za-z0-9_-]{1,100})=([^;\r\n]*)/);
-      if (!pair || pair[2].length > 2048) throw new SyncError('partial');
+      if (!pair || pair[2].length > 2048) throw new SyncError('partial', undefined, 'cookie');
       if (/;\s*max-age=0(?:;|$)/i.test(cookie)) cookies.delete(pair[1]); else cookies.set(pair[1], pair[2]);
-      if (cookies.size > 20 || [...cookies.values()].join('').length > 8192) throw new SyncError('partial');
+      if (cookies.size > 20 || [...cookies.values()].join('').length > 8192) throw new SyncError('partial', undefined, 'cookie');
     }
     if (response.status >= 300 && response.status < 400) {
       void response.body?.cancel().catch(() => {});
       // Never replay a password on a 307/308 or forward a session to another host.
-      if (![301, 302, 303].includes(response.status) || redirects >= 3) throw new SyncError('partial');
+      if (![301, 302, 303].includes(response.status) || redirects >= 3) throw new SyncError('partial', undefined, 'redirect');
       const location = response.headers.get('location');
-      if (!location) throw new SyncError('partial');
+      if (!location) throw new SyncError('partial', undefined, 'redirect');
       const target = new URL(location, url);
       if (target.origin !== 'https://ta.yrdsb.ca' || target.username || target.password || target.hash
-        || !['/live/index.php', '/live/students/listReports.php', '/live/students/viewReport.php'].includes(target.pathname)) throw new SyncError('partial');
+        || !['/live/index.php', '/live/students/listReports.php', '/live/students/viewReport.php'].includes(target.pathname)) throw new SyncError('partial', undefined, 'redirect');
       if (target.pathname === '/live/students/viewReport.php') schoolCourseURL(target.href);
       else for (const [name, value] of target.searchParams) {
-        if (!['student_id', 'subject_id', 'semester_id'].includes(name) || !/^\d{1,15}$/.test(value)) throw new SyncError('partial');
+        if (!['student_id', 'subject_id', 'semester_id', 'school_id'].includes(name) || !/^\d{1,15}$/.test(value)) throw new SyncError('partial', undefined, 'redirect');
       }
       return request(target, undefined, redirects + 1);
     }
     if (response.status === 401 || response.status === 403) throw new SyncError('auth');
     if (response.status === 429) throw new SyncError('rate-limited');
-    if (!response.ok) throw new SyncError('unavailable');
-    if (!/^text\/html(?:;|$)/i.test(response.headers.get('content-type') ?? '')) throw new SyncError('partial');
+    if (!response.ok) throw new SyncError(response.status === 0 ? 'partial' : 'unavailable', undefined, response.status === 0 ? 'redirect' : 'status');
+    if (!/^text\/html(?:;|$)/i.test(response.headers.get('content-type') ?? '')) throw new SyncError('partial', undefined, 'content-type');
+    if (!response.body || typeof response.body.getReader !== 'function') throw new SyncError('partial', undefined, 'body-stream');
     const html = await boundedText(response, 2 * 1024 * 1024, signal);
     totalBytes += new TextEncoder().encode(html).byteLength;
     if (totalBytes > 8 * 1024 * 1024) throw new SyncError('partial');
@@ -57,8 +58,13 @@ export async function fetchSchoolGrades(credentials: Credentials, signal: AbortS
   async function atStage<T>(stage: SchoolStage, action: () => Promise<T> | T): Promise<T> {
     try { return await action(); }
     catch (error) {
-      if (error instanceof SyncError) throw new SyncError(error.code, stage);
-      throw error;
+      if (error instanceof SyncError) {
+        throw new SyncError(error.code, stage,
+          error.reason ?? (stage === 'course-table' || stage === 'course-report' ? 'parser' : undefined));
+      }
+      // Do not expose native exception messages, which can include URLs or headers.
+      throw new SyncError('partial', stage,
+        stage === 'course-table' || stage === 'course-report' ? 'parser' : 'native-exception');
     }
   }
   try {
