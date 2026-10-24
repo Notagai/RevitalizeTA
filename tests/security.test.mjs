@@ -548,3 +548,63 @@ test('full direct login imports grades from the captured individual-report struc
   assert.equal(calls.filter(call => call.url.includes('viewReport.php')).length, 1);
   assert.equal(calls.every(call => new URL(call.url).origin === 'https://ta.yrdsb.ca'), true);
 });
+
+test('unrecognized live assessment scores identify the report-cell stage safely', () => {
+  const malformed = observedShapeReport.replace('8 / 10 = 80% weight=1',
+    'school proprietary score: 83% weight=1');
+  assert.throws(() => parseSchoolReport(malformed), error =>
+    error instanceof SyncError && error.code === 'partial' &&
+    error.reason === 'report-cell' && !String(error.message).includes('83%'));
+});
+
+test('unsupported assessment cells do not block published course grades or claim no work exists', async () => {
+  const badReport = observedShapeReport.replace('8 / 10 = 80% weight=1',
+    'unrecognized format: 83% weight=1');
+  const mock = async (url, options) => new Response(
+    String(url).includes('viewReport.php') ? badReport :
+      options.method === 'POST' ? compactCourseHTML() : loginHTML,
+    { headers: { 'content-type': 'text/html' } });
+  const snapshot = await fetchSchoolGrades(credentials, signal(), mock);
+  assert.equal(snapshot.source, 'teachassist');
+  assert.equal(snapshot.courses.length, 2);
+  assert.equal(snapshot.courses[0].reportedAverage, 94.5);
+  assert.equal(snapshot.courses[0].reportProblem, 'report-cell');
+  assert.deepEqual(snapshot.courses[0].assessments, []);
+  assert.deepEqual(snapshot.courses[0].categories, []);
+  assert.equal(snapshot.courses[1].reportProblem, undefined);
+  assert.equal(snapshot.courses[1].reportedAverage, null);
+  assert.equal(snapshot.courses[1].assessments.length, 0);
+});
+
+test('invalid grade totals downgrade only the affected course assessment report', async () => {
+  const wrong = observedShapeReport.replaceAll('<td></td><td></td></tr>',
+    '<td>10%</td><td>80%</td></tr>');
+  const mock = async (url, options) => new Response(
+    String(url).includes('viewReport.php') ? wrong :
+      options.method === 'POST' ? compactCourseHTML() : loginHTML,
+    { headers: { 'content-type': 'text/html' } });
+  const snapshot = await fetchSchoolGrades(credentials, signal(), mock);
+  assert.equal(snapshot.courses[0].reportProblem, 'report-normalization');
+  assert.equal(snapshot.courses[0].reportedAverage, 94.5);
+  assert.equal(snapshot.courses[0].assessments.length, 0);
+});
+
+test('authentication failure while reading a report is not hidden as unsupported parsing', async () => {
+  const mock = async (url, options) => new Response(
+    String(url).includes('viewReport.php') ? loginHTML :
+      options.method === 'POST' ? compactCourseHTML() : loginHTML,
+    { headers: { 'content-type': 'text/html' } });
+  await assert.rejects(fetchSchoolGrades(credentials, signal(), mock), error =>
+    error instanceof SyncError && error.code === 'auth' &&
+    error.stage === 'course-report' && error.reason === 'login-page');
+});
+
+test('report-failure marker validation rejects invalid sources and fabricated assessments', () => {
+  const course = parseSchoolCourses(compactCourseHTML())[0];
+  const marked = { ...course, assignments: [], weight_table: {}, reportProblem: 'report-layout' };
+  const snapshot = schoolSnapshot([marked], '2026-10-24T17:00:00.000Z');
+  assert.equal(snapshot.courses[0].reportProblem, 'report-layout');
+  assert.equal(snapshot.courses[0].reportedAverage, 94.5);
+  const bad = { ...marked, reportProblem: 'raw school HTML goes here' };
+  assert.throws(() => schoolSnapshot([bad], '2026-10-24T17:00:00.000Z'));
+});
