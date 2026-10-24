@@ -3,15 +3,19 @@ import { parseSnapshot, type Snapshot } from './model.ts';
 export type Failure = 'offline' | 'auth' | 'partial' | 'rate-limited' | 'unavailable' | 'cancelled' | 'storage';
 /** Safe diagnostic labels only. Never include URLs, HTML, credentials, or cookies in errors. */
 export type SchoolStage = 'initial-page' | 'login-submission' | 'course-table' | 'course-report';
+export type SchoolProblem = 'redirect' | 'status' | 'content-type' | 'body-stream' | 'cookie' | 'parser' | 'native-exception';
 export type SyncStatus = 'never' | 'checking' | 'deleting' | 'changed' | 'unchanged' | Failure;
 export type Change = { courseId: string; description: string };
-export type SyncState = { status: SyncStatus; snapshot: Snapshot | null; lastAttempt: string | null; changes: Change[]; problem?: SchoolStage };
+export type SyncState = { status: SyncStatus; snapshot: Snapshot | null; lastAttempt: string | null; changes: Change[]; problem?: SchoolStage; problemCode?: SchoolProblem };
 export interface SnapshotStore { load(): Promise<unknown>; save(snapshot: Snapshot): Promise<void>; clear(): Promise<void> }
 export interface Adapter { fetch(signal: AbortSignal): Promise<unknown> }
 export class SyncError extends Error {
   readonly code: Failure;
   readonly stage?: SchoolStage;
-  constructor(code: Failure, stage?: SchoolStage) { super(code); this.code = code; this.stage = stage; }
+  readonly reason?: SchoolProblem;
+  constructor(code: Failure, stage?: SchoolStage, reason?: SchoolProblem) {
+    super(code); this.code = code; this.stage = stage; this.reason = reason;
+  }
 }
 export const initialState: SyncState = { status: 'never', snapshot: null, lastAttempt: null, changes: [] };
 
@@ -66,7 +70,7 @@ export class SyncController {
     if (this.pending) return this.pending;
     const abort = new AbortController();
     this.abort = abort;
-    this.publish({ ...this.state, status: 'checking', lastAttempt: this.now(), changes: [], problem: undefined });
+    this.publish({ ...this.state, status: 'checking', lastAttempt: this.now(), changes: [], problem: undefined, problemCode: undefined });
     this.pending = this.run(adapter, abort).finally(() => { this.pending = null; this.abort = null; });
     return this.pending;
   }
@@ -88,10 +92,11 @@ export class SyncController {
       const changes = diffSnapshots(this.state.snapshot, snapshot);
       try { await this.store.save(snapshot); } catch { throw new SyncError('storage'); }
       if (abort.signal.aborted) throw new SyncError('cancelled');
-      this.publish({ ...this.state, snapshot, changes, status: changes.length ? 'changed' : 'unchanged', problem: undefined });
+      this.publish({ ...this.state, snapshot, changes, status: changes.length ? 'changed' : 'unchanged', problem: undefined, problemCode: undefined });
     } catch (error) {
       this.publish({ ...this.state, status: error instanceof SyncError ? error.code : 'partial',
-        problem: error instanceof SyncError ? error.stage : undefined, changes: [] });
+        problem: error instanceof SyncError ? error.stage : undefined,
+        problemCode: error instanceof SyncError ? error.reason : 'native-exception', changes: [] });
     } finally { if (timer) clearTimeout(timer); }
   }
   cancel() { this.abort?.abort(); }
