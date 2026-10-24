@@ -8,7 +8,7 @@ import { RequestLimiter } from '../src/core/ta-api.ts';
 import { parseSchoolCourses, parseSchoolReport, schoolCourseURL, schoolSnapshot } from '../src/core/school-parser.ts';
 import { fetchSchoolGrades } from '../src/core/direct-school.ts';
 import { SyncController } from '../src/core/sync.ts';
-import { credentials, loginHTML, courseHTML, reportHTML, mockSchool } from './fixtures/school-html.mjs';
+import { credentials, loginHTML, courseHTML, compactCourseHTML, reportHTML, mockSchool } from './fixtures/school-html.mjs';
 
 const require = createRequire(import.meta.url);
 const signal = () => new AbortController().signal;
@@ -147,4 +147,21 @@ test('patched Zod rejects oversized arrays before visiting elements', () => {
   const { z } = require('zod'); let visited = 0;
   z.array(z.string().refine(() => { visited++; return true; })).max(1).safeParse(['a', 'b']);
   assert.equal(visited, 0);
+});
+
+test('three-column TeachAssist layout parses dates, block, grade link, and hidden marks', () => {
+  const courses = parseSchoolCourses(compactCourseHTML());
+  assert.equal(courses.length, 2);
+  assert.equal(courses[0].code, 'MHF4U-01');
+  assert.equal(courses[0].name, 'Advanced Functions');
+  assert.equal(courses[0].block, '1');
+  assert.equal(courses[0].room, '306');
+  assert.equal(courses[0].start_time, '2026-09-08');
+  assert.equal(courses[0].end_time, '2027-01-29');
+  assert.equal(courses[0].overall_mark, 94.5);
+  assert.equal(courses[0].url.searchParams.get('school_id'), '12');
+  assert.equal(courses[1].overall_mark, 'N/A');
+  assert.equal(courses[1].url, null);
+  assert.throws(() => schoolCourseURL('viewReport.php?subject_id=123456&school_id=12&school_id=13'), { code: 'partial' });
+  assert.throws(() => schoolCourseURL('viewReport.php?subject_id=123456&school_id=evil'), { code: 'partial' });
 });
