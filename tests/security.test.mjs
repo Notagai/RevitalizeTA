@@ -9,6 +9,7 @@ import { parseSchoolCourses, parseSchoolReport, schoolCourseURL, schoolSnapshot,
 import { fetchSchoolGrades } from '../src/core/direct-school.ts';
 import { SyncController, SyncError } from '../src/core/sync.ts';
 import { credentials, loginHTML, courseHTML, compactCourseHTML, reportHTML, mockSchool } from './fixtures/school-html.mjs';
+import { observedShapeReport } from './fixtures/observed-report-shape.mjs';
 
 const require = createRequire(import.meta.url);
 const signal = () => new AbortController().signal;
@@ -487,4 +488,44 @@ test('a verified school-issued session and student ID allow one report-index GET
   assert.match(calls[2].cookie, /session_token=synthetic/);
   assert.equal(calls[2].method, 'GET');
   assert.equal(calls.every(call => !call.url.includes('password=')), true);
+});
+
+test('observed five-table course-report layout parses blank school category weightings', () => {
+  const parsed = parseSchoolReport(observedShapeReport);
+  assert.deepEqual(Object.keys(parsed.weight_table).sort(), ['A', 'C', 'F', 'KU', 'T']);
+  for (const value of Object.values(parsed.weight_table)) {
+    assert.equal(value.CW, 0);
+    assert.equal(value.SA, null);
+  }
+  assert.equal(parsed.assignments.length, 2);
+  assert.equal(parsed.assignments[0].name, 'Example Quiz');
+  assert.equal(parsed.assignments[0].KU[0].get, 8);
+  assert.equal(parsed.assignments[0].C[0].get, 7);
+  assert.equal(parsed.assignments[1].C[0].get, null);
+  const course = parseSchoolCourses(compactCourseHTML())[0];
+  const snapshot = schoolSnapshot([{ ...course, ...parsed }], '2026-10-24T17:00:00.000Z');
+  assert.equal(snapshot.source, 'teachassist');
+  assert.equal(snapshot.courses.length, 1);
+  assert.equal(snapshot.courses[0].assessments.length, 8);
+  assert.equal(snapshot.courses[0].assessments.filter(a => a.status === 'ungraded').length, 1);
+  assert.equal(snapshot.courses[0].categories.every(c => c.weight === 0), true);
+  assert.equal(snapshot.courses[0].reportedAverage, 94.5);
+});
+
+test('observed report shape accepts authentic weighting percentages when the school supplies them', () => {
+  const filled = observedShapeReport.replaceAll('<td></td><td></td></tr>', '<td>20%</td><td>80%</td></tr>');
+  const parsed = parseSchoolReport(filled);
+  assert.equal(parsed.weight_table.KU.CW, 20);
+  assert.equal(parsed.weight_table.C.CW, 20);
+  assert.equal(parsed.weight_table.A.SA, 80);
+  const course = parseSchoolCourses(compactCourseHTML())[0];
+  const snapshot = schoolSnapshot([{ ...course, ...parsed }], '2026-10-24T17:00:00.000Z');
+  assert.equal(snapshot.courses[0].categories.reduce((s, c) => s + c.weight, 0), 100);
+});
+
+test('unknown TeachAssist category weights do not legalize partial nonzero weighting tables', () => {
+  const course = parseSchoolCourses(compactCourseHTML())[0];
+  const parsed = parseSchoolReport(observedShapeReport);
+  parsed.weight_table.KU.CW = 10;
+  assert.throws(() => schoolSnapshot([{ ...course, ...parsed }], '2026-10-24T17:00:00.000Z'));
 });
