@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type PropsWithChildren } from 'react';
-import { AppState } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import { FixtureCache } from '../core/cache';
 import { initialState, SyncController, type SyncState } from '../core/sync';
 import { SessionStore } from '../core/session-store';
@@ -31,8 +31,7 @@ export function AppProvider({ children }: PropsWithChildren) {
   };
   const isGradeVisible = (courseId: string) => !privacyMode || revealedGrades[courseId] === true;
   const showGrade = (courseId: string) => {
-    if (session.current.credentials &&
-      (courseId === 'overall' || controller.state.snapshot?.courses.some(course => course.id === courseId))) {
+    if (signedIn && (courseId === 'overall' || sync.snapshot?.courses.some(course => course.id === courseId))) {
       setRevealedGrades(current => ({ ...current, [courseId]: true }));
     }
   };
@@ -68,7 +67,7 @@ export function AppProvider({ children }: PropsWithChildren) {
     void preferences.saveAppearance(value).then(() => setPreferenceError(false)).catch(() => setPreferenceError(true));
   }
   async function refresh() {
-    if (!ready || !SCHOOL_LOGIN_ENABLED || !session.current.credentials || signingIn.current) return;
+    if (!ready || !SCHOOL_LOGIN_ENABLED || Platform.OS === 'web' || !session.current.credentials || signingIn.current) return;
     if (Date.now() >= session.current.expiresAt) { await clear(); return; }
     const generation = session.current.generation;
     await controller.refresh(createSchoolAdapter(session.current.credentials, limiter, { consent: true }));
@@ -78,7 +77,7 @@ export function AppProvider({ children }: PropsWithChildren) {
     else if (['changed', 'unchanged'].includes(controller.state.status)) session.current.expiresAt = Date.now() + 15 * 60000;
   }
   async function signIn(value: Credentials, name: string, consent: boolean) {
-    if (!ready || !SCHOOL_LOGIN_ENABLED || !consent || !validSchoolCredentials(value) || signingIn.current || controller.state.status === 'checking' || controller.state.status === 'deleting') return false;
+    if (!ready || !SCHOOL_LOGIN_ENABLED || Platform.OS === 'web' || !consent || !validSchoolCredentials(value) || signingIn.current || controller.state.status === 'checking' || controller.state.status === 'deleting') return false;
     signingIn.current = true;
     const generation = ++session.current.generation;
     try {

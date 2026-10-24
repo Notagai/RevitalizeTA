@@ -1,7 +1,7 @@
 import { load } from 'cheerio/slim';
-import { normalizeTAResponse } from '../core/ta-api.ts';
-import { parseSnapshot } from '../core/model.ts';
-import { SyncError } from '../core/sync.ts';
+import { normalizeTAResponse } from './ta-api.ts';
+import { parseSnapshot } from './model.ts';
+import { SyncError } from './sync.ts';
 
 const SCHOOL_ORIGIN = 'https://ta.yrdsb.ca';
 const colors: Record<string, string> = { ffffaa: 'KU', c0fea4: 'T', afafff: 'C', ffd490: 'A', eeeeee: 'O', cccccc: 'F', dedede: 'F' };

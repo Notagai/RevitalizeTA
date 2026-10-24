@@ -57,7 +57,7 @@ export default function CourseDetails() {
           {!course.assessments.some(a => a.date) && course.assessments.length > 0 && (sort === 'Newest' || sort === 'Oldest')
             ? <Body muted>Dates unavailable · showing name order</Body> : null}
           </> : <Card><Heading>Grades hidden</Heading>
-            <Body muted>Privacy Mode is protecting this course's marks and assessment details.</Body>
+            <Body muted>Privacy Mode is protecting the course marks and assessment details.</Body>
             <GradeReveal id={course.id} label="Show course grades" />
           </Card>}
         </>}

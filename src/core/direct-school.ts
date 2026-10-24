@@ -1,6 +1,6 @@
-import { abortable, boundedText } from '../core/http.ts';
-import { validSchoolCredentials, type Credentials } from '../core/school-auth.ts';
-import { SyncError } from '../core/sync.ts';
+import { abortable, boundedText } from './http.ts';
+import { validSchoolCredentials, type Credentials } from './school-auth.ts';
+import { SyncError } from './sync.ts';
 import { parseSchoolCourses, parseSchoolReport, schoolCourseURL, schoolSnapshot } from './school-parser.ts';
 
 const LOGIN = 'https://ta.yrdsb.ca/live/index.php';
@@ -17,6 +17,9 @@ export async function fetchSchoolGrades(credentials: Credentials, signal: AbortS
         ...(cookies.size ? { Cookie: [...cookies].map(([name, value]) => `${name}=${value}`).join('; ') } : {}) },
       ...(body ? { body: body.toString() } : {}), signal, redirect: 'manual', credentials: 'omit', cache: 'no-store', referrerPolicy: 'no-referrer',
     }), signal);
+    // A native implementation must not auto-follow redirects; reject changed final URLs.
+    // Explicit redirect handling below is restricted to the official school origin.
+    if (response.redirected || (response.url && response.url !== url.href)) throw new SyncError('partial');
     const setCookies = response.headers.getSetCookie?.() ?? response.headers.get('set-cookie')?.split(/,\s*(?=[A-Za-z0-9_-]+=)/) ?? [];
     for (const cookie of setCookies) {
       if (cookie.length > 4096) throw new SyncError('partial');
