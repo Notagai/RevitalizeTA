@@ -10,6 +10,7 @@ function Navigation() {
     <Stack.Screen name="course/[id]" />
     <Stack.Screen name="weights" />
     <Stack.Screen name="sign-in" />
+    <Stack.Screen name="debug-table" />
     <Stack.Screen name="+not-found" options={{ title: 'Page not found' }} />
   </Stack></>;
 }
