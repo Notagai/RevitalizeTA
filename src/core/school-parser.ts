@@ -11,7 +11,10 @@ function document(html: string) {
   if (html.length > 2 * 1024 * 1024) return invalid();
   const $ = load(html);
   $('script,style,iframe,object,embed,template').remove();
-  if (/Invalid Login|Access Denied|Session Expired/i.test($.root().text()) || $('form#loginForm,input[name="password"]').length) throw new SyncError('auth');
+  if (/Invalid Login|Access Denied|Session Expired/i.test($.root().text()))
+    throw new SyncError('auth', undefined, 'auth-rejected');
+  if ($('form#loginForm,input[name="password"],input[type="password"]').length)
+    throw new SyncError('auth', undefined, 'login-page');
   return $;
 }
 
