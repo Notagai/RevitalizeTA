@@ -85,7 +85,9 @@ export function parseSnapshot(value: unknown): Snapshot {
       const a = object(value);
       const status = a.status;
       if (status !== 'graded' && status !== 'ungraded' && status !== 'exempt' && status !== 'missing') return fail();
-      const possible = number(a.possible, status === 'graded' ? Number.MIN_VALUE : 0);
+      // A level is a graded assessment without points. Numeric grades still
+      // require a positive denominator.
+      const possible = number(a.possible, status === 'graded' && a.level === undefined ? Number.MIN_VALUE : 0);
       const level = a.level === undefined ? undefined : validLevel(a.level) ? a.level : fail();
       const earned = a.earned === null ? null : number(a.earned, 0, possible);
       if (level !== undefined && (earned !== null || status !== 'graded' || possible !== 0)) fail();
