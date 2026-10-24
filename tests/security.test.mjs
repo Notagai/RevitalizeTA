@@ -165,3 +165,28 @@ test('three-column TeachAssist layout parses dates, block, grade link, and hidde
   assert.throws(() => schoolCourseURL('viewReport.php?subject_id=123456&school_id=12&school_id=13'), { code: 'partial' });
   assert.throws(() => schoolCourseURL('viewReport.php?subject_id=123456&school_id=evil'), { code: 'partial' });
 });
+
+test('full direct login can parse the current compact TeachAssist timetable', async () => {
+  const calls = [];
+  const fakeFetch = async (url, options) => {
+    calls.push({ url: String(url), method: options.method });
+    return new Response(options.method === 'POST' ? compactCourseHTML() :
+      String(url).includes('viewReport.php') ? reportHTML : loginHTML,
+      { headers: { 'content-type': 'text/html; charset=utf-8', 'set-cookie': 'session_token=invented-session; Secure; HttpOnly' } });
+  };
+  const snapshot = await fetchSchoolGrades(credentials, signal(), fakeFetch);
+  assert.equal(snapshot.source, 'teachassist');
+  assert.equal(snapshot.courses.length, 2);
+  assert.equal(snapshot.courses[0].reportedAverage, 94.5);
+  assert.equal(snapshot.courses[1].reportedAverage, null);
+  assert.equal(calls.filter(x => x.method === 'GET' && x.url.includes('viewReport.php')).length, 1);
+  for (const call of calls) assert.equal(new URL(call.url).origin, 'https://ta.yrdsb.ca');
+});
+
+test('failed stages expose only fixed diagnostic labels', async () => {
+  const html = new Response('unrecognized page', { headers: { 'content-type': 'text/html' } });
+  const bad = async (_url, options) => options.method === 'POST' ? html.clone() :
+    new Response(loginHTML, { headers: { 'content-type': 'text/html' } });
+  await assert.rejects(fetchSchoolGrades(credentials, signal(), bad), error =>
+    error.code === 'partial' && error.stage === 'course-table' && error.message === 'partial');
+});
