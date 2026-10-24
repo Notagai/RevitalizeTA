@@ -1,5 +1,5 @@
 import { abortable, boundedText } from './http.ts';
-import { validSchoolCredentials, type Credentials } from './school-auth.ts';
+import { validSchoolCredentials, type Credentials } from './school-credentials.ts';
 import { SyncError, type SchoolStage } from './sync.ts';
 import { parseSchoolCourses, parseSchoolReport, schoolCourseURL, schoolSnapshot, schoolLoginForm, schoolReportsURL, schoolCoursePageKind, schoolTimetableFailure, type SchoolCourse } from './school-parser.ts';
 
