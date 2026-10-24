@@ -163,7 +163,7 @@ export function calculatedAverage(course: Course, overrides: LevelOverrides = {}
   let sum = 0, weights = 0;
   const knownWeights = course.categories.some(c => c.weight > 0);
   for (const category of course.categories) {
-    const entries = course.assessments.filter(a => a.category === category.id)
+    const entries = course.assessments.filter(a => a.category === category.id && a.weight > 0)
       .map(a => ({ a, grade: assessmentPercent(a, overrides) }))
       .filter((entry): entry is { a: Assessment; grade: number } => entry.grade !== null);
     if (!entries.length) continue;
