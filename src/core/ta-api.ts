@@ -41,7 +41,9 @@ export function normalizeTAResponse(value: unknown, checkedAt = new Date().toISO
     const weights: Course['categories'] = categoryIds.filter(key => table[key] !== undefined).map(key => {
       const entry = record(table[key]);
       return { id: key, name: categories[key], weight: numeric(entry.CW, 100),
-        reportedAverage: entry.SA === null || entry.SA === 'N/A' ? null : numeric(entry.SA, 100) };
+        reportedAverage: entry.SA === null || entry.SA === 'N/A' ? null : numeric(entry.SA, 100),
+        ...(entry.reportedLevel === undefined ? {} : {
+          reportedLevel: source === 'teachassist' && validLevel(entry.reportedLevel) ? entry.reportedLevel : invalid() }) };
     });
     const names = new Map<string, number>();
     const assessments: Assessment[] = [];
