@@ -529,3 +529,22 @@ test('unknown TeachAssist category weights do not legalize partial nonzero weigh
   parsed.weight_table.KU.CW = 10;
   assert.throws(() => schoolSnapshot([{ ...course, ...parsed }], '2026-10-24T17:00:00.000Z'));
 });
+
+test('full direct login imports grades from the captured individual-report structure', async () => {
+  const calls = [];
+  const mock = async (url, options) => {
+    calls.push({ url: String(url), method: options.method });
+    const html = String(url).includes('viewReport.php') ? observedShapeReport :
+      options.method === 'POST' ? compactCourseHTML() : loginHTML;
+    return new Response(html, { headers: { 'content-type': 'text/html' } });
+  };
+  const snapshot = await fetchSchoolGrades(credentials, signal(), mock);
+  assert.equal(snapshot.source, 'teachassist');
+  assert.equal(snapshot.courses.length, 2);
+  assert.equal(snapshot.courses[0].reportedAverage, 94.5);
+  assert.equal(snapshot.courses[0].assessments.length, 8);
+  assert.equal(snapshot.courses[1].reportedAverage, null);
+  assert.equal(snapshot.courses[1].assessments.length, 0);
+  assert.equal(calls.filter(call => call.url.includes('viewReport.php')).length, 1);
+  assert.equal(calls.every(call => new URL(call.url).origin === 'https://ta.yrdsb.ca'), true);
+});
