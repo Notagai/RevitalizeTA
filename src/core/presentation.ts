@@ -43,6 +43,8 @@ export function syncMessage(state: SyncState): string {
     parser: 'School HTML did not match a supported layout',
     'native-exception': 'Native request or response reader failed',
     'login-method': 'School login form requires a different sign-in method',
+    'course-layout': 'Student Reports loaded, but its timetable layout is not recognized',
+    'portal-page': 'The school returned a non-report page after sign-in',
   };
   const stage = state.problem ? ` Failed during: ${stages[state.problem]}.` : '';
   const reason = state.problemCode ? ` Detail: ${reasons[state.problemCode]}.` : '';
