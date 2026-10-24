@@ -5,7 +5,7 @@ import { createRequire } from 'node:module';
 import { abortable, boundedText } from '../src/core/http.ts';
 import { createSchoolAdapter, validSchoolCredentials } from '../src/core/school-auth.ts';
 import { RequestLimiter } from '../src/core/ta-api.ts';
-import { parseSchoolCourses, parseSchoolReport, schoolCourseURL, schoolSnapshot, schoolLoginForm, schoolReportsURL } from '../src/core/school-parser.ts';
+import { parseSchoolCourses, parseSchoolReport, schoolCourseURL, schoolSnapshot, schoolLoginForm, schoolReportsURL, schoolCoursePageKind } from '../src/core/school-parser.ts';
 import { fetchSchoolGrades } from '../src/core/direct-school.ts';
 import { SyncController } from '../src/core/sync.ts';
 import { credentials, loginHTML, courseHTML, compactCourseHTML, reportHTML, mockSchool } from './fixtures/school-html.mjs';
@@ -371,4 +371,48 @@ test('a valid HTML response without timetable or navigation is classified withou
       error.code === 'partial' && error.stage === 'course-table' &&
       error.reason === reason && !String(error.message).includes(secret));
   }
+});
+
+test('a real-shape weighting table and nested grade cells parse without silent data loss', () => {
+  const nested = '<html><table><tr><th>Category</th><th>Weighting</th><th>Course Weighting</th><th>Student Achievement</th></tr>' +
+    '<tr><td>Knowledge / Understanding</td><td>50%</td><td>50%</td><td>80%</td></tr>' +
+    '<tr><td>Thinking</td><td>50%</td><td>50%</td><td>90%</td></tr></table>' +
+    '<table width="100%"><tr><td rowspan="2">Quiz</td><td><table><tr>' +
+    '<td bgcolor="ffffaa">8 / 10 = 80% weight=1</td>' +
+    '<td bgcolor="c0fea4">9 / 10 = 90% no weight</td>' +
+    '</tr></table></td></tr><tr><td>Comments</td></tr></table></html>';
+  const parsed = parseSchoolReport(nested);
+  assert.equal(parsed.weight_table.KU.CW, 50);
+  assert.equal(parsed.weight_table.T.CW, 50);
+  assert.equal(parsed.assignments.length, 1);
+  assert.equal(parsed.assignments[0].KU[0].get, 8);
+  assert.equal(parsed.assignments[0].T[0].weight, 0);
+});
+
+test('student IDs from verified redirects are carried as a cookie, never into login URLs', async () => {
+  const calls = [];
+  const mockFetch = async (url, options) => {
+    calls.push({ url: String(url), options });
+    if (options.method === 'POST') {
+      return new Response(null, { status: 302, headers: {
+        location: '/live/students/listReports.php?student_id=123456789',
+        'set-cookie': 'session_token=synthetic; HttpOnly; Secure',
+      } });
+    }
+    const content = String(url).includes('viewReport.php') ? reportHTML :
+      String(url).includes('listReports.php') ? courseHTML() : loginHTML;
+    return new Response(content, { headers: { 'content-type': 'text/html' } });
+  };
+  const result = await fetchSchoolGrades(credentials, signal(), mockFetch);
+  assert.equal(result.courses.length, 1);
+  assert.match(calls[2].options.headers.Cookie, /session_token=synthetic/);
+  assert.match(calls[2].options.headers.Cookie, /student_id=123456789/);
+  assert.equal(calls[1].url, 'https://ta.yrdsb.ca/live/index.php');
+  assert.equal(calls.every(({ url }) => !url.includes('password=')), true);
+});
+
+test('school page identification distinguishes a login screen from a report', () => {
+  assert.equal(schoolCoursePageKind('<html><form><input type="password"></form></html>'), 'login-page');
+  assert.equal(schoolCoursePageKind('<html><h2>Student Reports</h2></html>'), 'report-page');
+  assert.equal(schoolCoursePageKind('<html><h2>Welcome</h2></html>'), 'other-page');
 });
