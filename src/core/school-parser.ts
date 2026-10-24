@@ -1,6 +1,5 @@
 import { load } from 'cheerio/slim';
 import { normalizeTAResponse } from './ta-api.ts';
-import { parseSnapshot } from './model.ts';
 import { SyncError } from './sync.ts';
 
 const SCHOOL_ORIGIN = 'https://ta.yrdsb.ca';
@@ -316,6 +315,7 @@ export function parseSchoolReport(html: string) {
 }
 
 export function schoolSnapshot(courses: (SchoolCourse & ReturnType<typeof parseSchoolReport>)[], checkedAt: string) {
-  const normalized = normalizeTAResponse(courses, checkedAt);
-  return parseSnapshot({ ...normalized, version: 3, source: 'teachassist' });
+  // Validate using TeachAssist's actual provenance so an explicit all-zero
+  // weighting sentinel means "unpublished" rather than a fabricated estimate.
+  return normalizeTAResponse(courses, checkedAt, 'teachassist');
 }
