@@ -145,42 +145,98 @@ export function parseSchoolReport(html: string) {
   const $ = document(html);
   const assignments: Record<string, unknown>[] = [];
   const weight_table: Record<string, { CW: number; W: number; SA: number | null }> = {};
-  let matchedTable = false;
+  const text = (el: Parameters<ReturnType<typeof load>>[0]) => clean($(el).text());
+  const categoryFor = (value: string): string | null => {
+    const name = value.toLowerCase();
+    if (/\bknowledge\b/.test(name)) return 'KU';
+    if (/\bthinking\b/.test(name)) return 'T';
+    if (/\bcommunication\b/.test(name)) return 'C';
+    if (/\bapplication\b/.test(name)) return 'A';
+    if (/\bother\b/.test(name)) return 'O';
+    if (/\bfinal\b/.test(name)) return 'F';
+    return null;
+  };
+  const percentValue = (value: string): number | null => {
+    if (!value.trim() || /^N\/A$/i.test(value.trim())) return null;
+    const match = value.match(/(\d+(?:\.\d+)?)\s*%/);
+    if (!match) return null;
+    const number = Number(match[1]);
+    return Number.isFinite(number) && number <= 100 ? number : null;
+  };
+
+  // Legacy TeachAssist exposes category colors on the rows.
   $('table[cellpadding="5"] tr').each((_i, row) => {
     const category = colors[($(row).attr('bgcolor') ?? '').replace('#', '').toLowerCase()];
     if (!category) return;
-    matchedTable = true;
-    const cells = $(row).children('td').map((_i, cell) => clean($(cell).text())).get();
-    const percentages = cells.slice(1).map(value => value === 'N/A' || value === '' ? null : Number(value.replace('%', '')));
-    // School final rows omit the term weighting column.
-    if (category === 'F' && percentages.length === 2) percentages.unshift(0);
-    if (percentages.length !== 3 || percentages[1] === null || percentages.some(value => value !== null && (!Number.isFinite(value) || value < 0 || value > 100)) || weight_table[category]) return invalid();
-    weight_table[category] = { W: percentages[0] ?? 0, CW: percentages[1], SA: percentages[2] };
+    const cells = $(row).children('td').map((_j, cell) => text(cell)).get();
+    const values = cells.slice(1).map(percentValue);
+    if (category === 'F' && values.length === 2) values.unshift(0);
+    if (values.length !== 3 || values[1] === null || values.some((v, i) => i !== 2 && v === null)
+      || weight_table[category]) return invalid();
+    weight_table[category] = { W: values[0] ?? 0, CW: values[1], SA: values[2] };
   });
+
+  // Other TeachAssist layouts identify the weighting table by its headings,
+  // not the bgcolor attributes on the rows. Never mistake assessment tables
+  // for course weightings.
+  if (!Object.keys(weight_table).length) {
+    const tables = $('table').filter((_i, table) => {
+      const headings = text($(table).find('tr').first()).toLowerCase();
+      return /categor(y|ies)/.test(headings) && /course\s*weighting/.test(headings);
+    });
+    tables.first().find('tr').each((_i, row) => {
+      const cells = $(row).children('td');
+      if (cells.length < 3) return;
+      const category = categoryFor(text(cells.eq(0)));
+      if (!category) return;
+      const values = cells.map((_j, cell) => text(cell)).get();
+      const weighted = percentValue(values[cells.length >= 4 ? 2 : 1]);
+      const current = percentValue(values[1]);
+      const achievement = percentValue(values[cells.length >= 4 ? 3 : 2]);
+      if (weighted === null || weight_table[category]) return invalid();
+      weight_table[category] = { CW: weighted, W: current ?? weighted, SA: achievement };
+    });
+  }
+
+  // Grade cells can contain nested tables. Read colored descendants, but only
+  // store cells with actual grade/status data and a declared numeric weight.
   $('table[width="100%"] tr').each((_i, row) => {
-    const title = $(row).find('td[rowspan="2"]').first();
+    const title = $(row).children('td[rowspan]').first();
     if (!title.length) return;
     if (assignments.length >= 2000) return invalid();
-    const assignment: Record<string, unknown> = { name: clean(title.text()) };
-    let components = 0;
-    $(row).children('td[bgcolor]').each((_i, cell) => {
+    const name = text(title);
+    if (!name) return invalid();
+    const assignment: Record<string, unknown> = { name };
+    let parts = 0;
+    $(row).find('td[bgcolor]').each((_j, cell) => {
       const category = colors[($(cell).attr('bgcolor') ?? '').replace('#', '').toLowerCase()];
-      if (!category || !clean($(cell).text())) return;
-      if (!weight_table[category] || assignment[category]) return invalid();
-      const value = clean($(cell).text());
+      if (!category) return;
+      const value = text(cell);
+      if (!value) return;
       const points = value.match(/(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)/);
-      const weight = value.match(/weight\s*=\s*(\d+(?:\.\d+)?)/i);
+      const weight = value.match(/\bweight\s*=\s*(\d+(?:\.\d+)?)/i);
+      const noWeight = /\bno\s+weight\b/i.test(value);
       const pending = /not\s*finished|unfinished|ungraded|pending|N\/A/i.test(value);
-      const exempt = /exempt|no\s*mark/i.test(value), missing = /missing/i.test(value);
-      if (!weight || (!points && !pending && !exempt && !missing)) return invalid();
-      assignment[category] = [{ get: pending || exempt || missing ? null : Number(points![1]), total: points ? Number(points[2]) : 0,
-        weight: Number(weight[1]), finished: !pending, exempt, missing }];
-      components++;
+      const exempt = /\bexempt\b|\bno\s+mark\b/i.test(value);
+      const missing = /\bmissing\b/i.test(value);
+      if (!points && !pending && !exempt && !missing) return;
+      if (!weight && !noWeight || !weight_table[category]) return invalid();
+      const earned = points ? Number(points[1]) : null;
+      const possible = points ? Number(points[2]) : 0;
+      const weighting = weight ? Number(weight[1]) : 0;
+      if (!Number.isFinite(possible) || !Number.isFinite(weighting) || weighting > 100
+        || earned !== null && (earned > possible || possible <= 0)) return invalid();
+      const existing = assignment[category] as Record<string, unknown>[] | undefined;
+      if (existing && existing.length >= 20) return invalid();
+      const component = { get: pending || exempt || missing ? null : earned, total: possible,
+        weight: weighting, finished: !pending && !missing, exempt, missing };
+      if (existing) existing.push(component); else assignment[category] = [component];
+      parts++;
     });
-    if (!components || !assignment.name) return invalid();
+    if (!parts) return invalid();
     assignments.push(assignment);
   });
-  if (!matchedTable && !/No (?:assessments|assignments|marks)/i.test($.root().text())) return invalid();
+  if (!Object.keys(weight_table).length && !/No (?:assessments|assignments|marks)/i.test($.root().text())) return invalid();
   return { assignments, weight_table };
 }
 
