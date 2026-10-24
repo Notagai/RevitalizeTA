@@ -1,7 +1,7 @@
 import { abortable, boundedText } from './http.ts';
 import { validSchoolCredentials, type Credentials } from './school-auth.ts';
 import { SyncError, type SchoolStage } from './sync.ts';
-import { parseSchoolCourses, parseSchoolReport, schoolCourseURL, schoolSnapshot, type SchoolCourse } from './school-parser.ts';
+import { parseSchoolCourses, parseSchoolReport, schoolCourseURL, schoolSnapshot, schoolLoginForm, type SchoolCourse } from './school-parser.ts';
 
 const LOGIN = 'https://ta.yrdsb.ca/live/index.php';
 
@@ -74,9 +74,11 @@ export async function fetchSchoolGrades(credentials: Credentials, signal: AbortS
   try {
     // Fetch a session page and submit the official form using HTTPS POST.
     // Never retry login using credential-bearing GET URLs.
-    await atStage('initial-page', () => request(new URL(LOGIN)));
-    const html = await atStage('login-submission', () => request(new URL(LOGIN),
-      new URLSearchParams({ username: credentials.username, password: credentials.password, subject_id: '0', submit: 'Login' })));
+    const loginPage = await atStage('initial-page', () => request(new URL(LOGIN)));
+    const form = await atStage('initial-page', () => schoolLoginForm(loginPage));
+    const html = await atStage('login-submission', () => request(form.action,
+      new URLSearchParams({ username: credentials.username, password: credentials.password,
+        subject_id: form.subjectId, submit: 'Login' })));
     const courses = await atStage('course-table', () => parseSchoolCourses(html));
     const reports: (SchoolCourse & ReturnType<typeof parseSchoolReport>)[] = [];
     for (const course of courses) {
