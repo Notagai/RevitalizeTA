@@ -21,6 +21,7 @@ export default function Dashboard() {
   const allCourses = sync.snapshot?.courses ?? [];
   const courses = coursesForSemester(allCourses, semester);
   const summary = gradeSummary(allCourses);
+  const unreadableReports = allCourses.filter(course => course.reportProblem).length;
   const overallVisible = isGradeVisible('overall');
   const failed = !['never', 'checking', 'changed', 'unchanged'].includes(sync.status);
   return <Page>
@@ -50,6 +51,10 @@ export default function Dashboard() {
       </View>
     </View>
     {failed ? <View accessibilityLiveRegion="polite"><Body>{syncMessage(sync)}</Body></View> : null}
+    {unreadableReports ? <Card>
+      <Text style={{ color: colors.danger, fontSize: 14, fontWeight: '700' }}>Some assessment reports could not be imported</Text>
+      <Body>{unreadableReports} {unreadableReports === 1 ? 'course has' : 'courses have'} an unsupported assessment format. Reported course grades remain available. Open each affected course for the exact safe diagnostic.</Body>
+    </Card> : null}
     {!signedIn ? <Card><Heading>{SCHOOL_LOGIN_ENABLED ? 'Connect your account' : 'Account connection pending'}</Heading>
       <Body muted>{SCHOOL_LOGIN_ENABLED ? 'Sign in with your YRDSB TeachAssist account.' : 'Account connection is unavailable.'}</Body>
       <Link href="/sign-in" style={[styles.link, { color: colors.accent }]}>{SCHOOL_LOGIN_ENABLED ? 'Sign in' : 'Connection details'}</Link>
