@@ -23,6 +23,8 @@ export type Course = {
   reportedAverage: number | null;
   categories: { id: string; name: string; weight: number; reportedAverage?: number | null }[];
   assessments: Assessment[];
+  /** Course marks may load even when the private assessment HTML is unsupported. */
+  reportProblem?: 'report-cell' | 'report-assignment' | 'report-weighting' | 'report-layout' | 'report-normalization';
 };
 export type Comparison = { checkedAt: string; courses: { id: string; reportedAverage: number | null }[] };
 export type Snapshot = {
@@ -91,8 +93,12 @@ export function parseSnapshot(value: unknown): Snapshot {
     unique(assessments);
     if (c.semester !== undefined && c.semester !== 1 && c.semester !== 2) fail();
     if (c.period !== undefined && (typeof c.period !== 'number' || !Number.isInteger(c.period) || c.period < 1 || c.period > 5)) fail();
+    const reportProblem = c.reportProblem;
+    if (reportProblem !== undefined && !['report-cell', 'report-assignment', 'report-weighting', 'report-layout', 'report-normalization'].includes(reportProblem as string)) fail();
+    if (reportProblem !== undefined && (categories.length || assessments.length || root.source !== 'teachassist')) fail();
     return {
       id: text(c.id), code: text(c.code), name: text(c.name), term: text(c.term),
+      ...(reportProblem === undefined ? {} : { reportProblem: reportProblem as Course['reportProblem'] }),
       ...(c.semester === undefined ? {} : { semester: c.semester as 1 | 2 }),
       ...(c.period === undefined ? {} : { period: c.period as number }),
       ...(c.teacher === undefined ? {} : { teacher: text(c.teacher) }),
