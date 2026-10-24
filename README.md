@@ -1,28 +1,38 @@
 # RevitalizeTA
 
-An unofficial Expo SDK 58 / React Native TeachAssist grade tracker with Dashboard, Analytics, course assessments, course weight breakdowns, and customizable light/dark themes.
+An unofficial Expo SDK 58 / React Native Android grade tracker for YRDSB TeachAssist. Dashboard, analytics, assignment details, grade weights, semester navigation and an optional Privacy Mode are included.
 
-School-account sign-in is implemented through the app's own Expo server route and the official YRDSB TeachAssist login form. Credentials are encoded in a POST body and never sent to the unofficial TA API. Testing used only invented accounts/HTML; a real-account login has not been verified.
+## Direct on-device school login
 
-See [SEC_FIXES.md](SEC_FIXES.md) for the security audit, fixed issues, the remaining upstream audit warning, configuration, and validation limits.
+The **Android and iOS app directly contacts** `https://ta.yrdsb.ca/live/index.php` using the official form. No RevitalizeTA API endpoint, server, Redis, password proxy, or public backend is needed. The deprecated third-party TA API is disabled.
 
-Install dependencies with `npm ci` (Node 24 recommended), then:
+Student identifiers are nine digits; passwords may be longer and include punctuation. Sign-in requires affirmative consent. Passwords, parsed grades and session cookies remain in device memory for the current session, never persisted. Session state expires after 15 minutes without a successful refresh. Privacy Mode is persistent, but only its on/off boolean is saved; reveals are ephemeral. Screenshots remain enabled.
+
+**This is source implementation, not proof of successful real-school authentication.** Only invented credentials and mock HTML have been tested. Native release-device checks are still required for redirect prevention, Android cookie behavior and the school's authenticated HTML structure. Browser login is disabled, since browser cross-origin restrictions prevent safe direct authentication without a backend.
+
+## Setup
+
+Use Node 24 and Android Studio:
 
 ```sh
-npm start
+npm ci
 npm run typecheck
-npm test
 npm run lint
+npm test
+npx expo export --platform android --output-dir .expo/native-export
+npx expo run:android
 ```
 
-On Windows, use `npm.cmd` / `npx.cmd` if PowerShell blocks script shims. The postinstall script applies a version-checked node-forge security backport; do not skip it. Zod is overridden to 4.6.7.
+On Windows use `npm.cmd` / `npx.cmd` if PowerShell blocks shims. The postinstall script applies a version-checked node-forge security backport; do not skip install scripts. See `SEC_FIXES.md`.
 
-Development login accepts HTTP only on loopback. Native devices and production need a trusted HTTPS app server. Export/deploy the server and configure EXPO_PUBLIC_APP_ORIGIN for native builds. Production also requires AUTH_REDIS_REST_URL, AUTH_REDIS_REST_TOKEN and AUTH_RATE_LIMIT_SECRET for shared throttling; login fails closed without them. .env.example documents these names without containing secrets. No backend or Redis resource has been deployed/provisioned by this work.
+## Security and privacy
 
-The dashboard shows an overall reported average, the change from the previous successful refresh and a weighted estimate. Semester controls filter the course list. The estimate uses assessment/category weights, then credits or editable course weights across courses. Missing, exempt, pending and zero-weight marks are excluded from estimates.
+The client communicates only with allowed HTTPS paths under the official TeachAssist host. Requests use form-encoded bodies, bounded responses, request-local cookies, strict parser validations and manual redirect checks. Never forward school passwords or cookies to arbitrary URLs. The unofficial API is disabled.
 
-Course pages show teacher/room metadata when available and virtualize assignment cards. Assignments with multiple category marks remain one card. Sort by date, grade, name or weight; unavailable marks/dates sort last. Weight-page links open at the selected course or at the top from Dashboard.
+Native networking differs from Node Fetch. Test the signed release APK against a **controlled, simulated HTTPS server** with synthetic credentials to confirm that Android does not automatically forward the request body when receiving 307/308 redirects. Never use real school accounts in these tests.
 
-Credentials, grades, display name, course weights and comparison data remain in memory. Sessions expire after 15 minutes without a successful refresh; signing out clears them. Appearance preferences persist separately. Clearing grade data also removes legacy synthetic caches.
+Grade data remains in memory and is discarded on sign-out. Privacy Mode hides grades and grade-related details until each course or the overall average is explicitly revealed. This is screen privacy, not device encryption or a substitute for locking the phone.
 
-See [FEATURES.md](FEATURES.md), [implementation status](docs/IMPLEMENTATION_STATUS.md), [testing](docs/TESTING.md), and [login architecture](docs/TA_API_INTEGRATION.md).
+Docs: [Features](FEATURES.md) · [Security](SEC_FIXES.md) · [Testing](docs/TESTING.md) · [Integration](docs/TA_API_INTEGRATION.md).
+
+This is unofficial software, not affiliated with YRDSB or TeachAssist.

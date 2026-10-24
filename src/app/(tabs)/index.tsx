@@ -9,17 +9,19 @@ import { Body, Card, Heading, Page } from '../../ui/components';
 import { GradeDelta, GradeRing } from '../../ui/grade-visuals';
 import { CourseCard, LunchBar } from '../../ui/course-card';
 import { RefreshButton } from '../../ui/refresh-button';
+import { GradeReveal } from '../../ui/grade-reveal';
 import { SemesterToggle } from '../../ui/semester-toggle';
 import { useTheme } from '../../ui/theme';
 import { SCHOOL_LOGIN_ENABLED } from '../../core/integration';
 
 export default function Dashboard() {
-  const { sync, ready, displayName, courseWeights, signedIn } = useApp();
+  const { sync, ready, displayName, courseWeights, signedIn, isGradeVisible } = useApp();
   const { colors } = useTheme();
   const [semester, setSemester] = useState<Semester>(1);
   const allCourses = sync.snapshot?.courses ?? [];
   const courses = coursesForSemester(allCourses, semester);
   const summary = gradeSummary(allCourses);
+  const overallVisible = isGradeVisible('overall');
   const failed = !['never', 'checking', 'changed', 'unchanged'].includes(sync.status);
   return <Page>
     <View style={styles.welcome}>
@@ -29,10 +31,14 @@ export default function Dashboard() {
     </View>
     <View style={[styles.hero, { backgroundColor: colors.hero }]}>
       <View style={styles.heroRow}>
-        <GradeRing value={summary.average} label="overall average" inverse />
+        {overallVisible ? <GradeRing value={summary.average} label="overall average" inverse /> :
+          <View accessible accessibilityLabel="Overall average hidden" style={{ width: 136, height: 136, alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={{ color: colors.onHero, fontSize: 20, fontWeight: '700' }}>Hidden</Text>
+          </View>}
         <View style={styles.heroInfo}>
           <Text style={{ color: colors.onHero, fontSize: 16, fontWeight: '600' }}>From {summary.reportedCount} {summary.reportedCount === 1 ? 'course' : 'courses'}</Text>
-          <GradeDelta value={averageDelta(allCourses, sync.snapshot?.comparison)} inverse />
+          {overallVisible ? <GradeDelta value={averageDelta(allCourses, sync.snapshot?.comparison)} inverse /> :
+            <GradeReveal id="overall" label="Show overall grades" />}
           <Text style={{ color: colors.heroMuted, fontSize: 11, lineHeight: 17 }}>Last refreshed: {timestamp(sync.snapshot?.checkedAt ?? null)}</Text>
           <RefreshButton />
         </View>
@@ -40,7 +46,7 @@ export default function Dashboard() {
       <View style={[styles.weighted, { borderTopColor: colors.heroMuted + '40' }]}>
         <View style={{ flex: 1, gap: 3 }}><Text style={{ color: colors.heroMuted, fontSize: 12 }}>Weighted average</Text>
           <Text style={{ color: colors.heroMuted, fontSize: 11 }}>Category estimates · course weights</Text></View>
-        <Text style={{ color: colors.onHero, fontSize: 25, fontWeight: '700', fontVariant: ['tabular-nums'] }}>{percent(weightedAverage(allCourses, courseWeights))}</Text>
+        <Text style={{ color: colors.onHero, fontSize: 25, fontWeight: '700', fontVariant: ['tabular-nums'] }}>{overallVisible ? percent(weightedAverage(allCourses, courseWeights)) : 'Hidden'}</Text>
       </View>
     </View>
     {failed ? <View accessibilityLiveRegion="polite"><Body>{syncMessage(sync)}</Body></View> : null}

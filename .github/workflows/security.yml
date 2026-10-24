@@ -1,0 +1,32 @@
+name: Security and app checks
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - security/**
+permissions:
+  contents: read
+jobs:
+  verify:
+    name: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - name: Bundle for Android (no Expo server routes)
+        run: npx expo export --platform android --output-dir .expo/native-security-bundle
+      - name: Verify security patch remains installed
+        run: node scripts/patch-security-dependencies.cjs
+      - name: Inspect dependency advisories
+        run: |
+          npm audit --json > npm-audit.json || true
+          node scripts/check-audit.cjs npm-audit.json

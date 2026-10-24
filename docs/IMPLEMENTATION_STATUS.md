@@ -1,25 +1,17 @@
 # Implementation status
 
-The UI work in FEATURES.md remains implemented. School login is now enabled through the app server and the official TeachAssist form. The insecure unofficial TA API stays permanently disabled. See [SEC_FIXES.md](../SEC_FIXES.md) for the security review, configuration and remaining limits.
+RevitalizeTA is an Expo SDK 58 native application with Dashboard, course details, analytics, weight editor, light/dark themes and Privacy Mode.
 
-## Screens and calculations
+## School integration
 
-Dashboard has the supplied logo/welcome, grade ring, overall/course changes, weighted estimates, semester course toggle, and shared course-weight page. Course pages contain reported/estimated grades, teacher/room metadata when available, weight links, and virtualized assignment cards with status/date/grade/name/weight controls. Analytics includes the lowest grade. The demo controls, universal refresh banner and glass UI are removed.
+The application no longer needs a separate developer-operated HTTPS server or Redis. The native client sends an HTTPS form POST directly to the official TeachAssist host, parses allowlisted course reports on device and keeps credentials, cookies and grades in volatile memory. The unofficial third-party TA API remains disabled. Browser login is disabled.
 
-The overall average uses available reported grades. The weighted estimate combines category-weighted estimates with course credits or explicit weights. Unknown grades and zero-weight entries are excluded. Comparison history is the previous successful refresh in the session.
+A valid nine-digit student number and explicit authorization are required. Do not force an eight-character password limit; account holders may have longer, more complex passwords. The app contains a local sign-in/refresh cooldown, which cannot substitute for school-side abuse protection.
 
-## School login and security
+**Native release-device verification remains outstanding** for redirects, cookies and the authenticated HTML schema. No live school login was performed during this implementation.
 
-The latest user request authorizes implementing school login, superseding the earlier disabled-login decision. The app posts credentials to /api/school/grades on its own server; that server uses an encoded form POST to the official school, isolated cookies, allowlisted course links, streaming size limits and total deadlines. It never uses the unofficial API as a live transport.
+## Privacy Mode
 
-HTTPS is checked by the client before transmitting credentials and by the server. HTTP is limited to development loopback. Explicit authorization is required. The server enforces same-origin JSON/custom-header requests, per-account and global limits, and requires atomic shared Redis limits in production. Production without that configuration fails closed. Sensitive responses are no-store, private and sanitized.
+Setting persists locally as a boolean. Concealed grades, course details, analytics, ranking and accessible labels are restored only by explicit per-course or overall Show controls. Revelations reset on sign-out and mode switches. Screenshots remain allowed.
 
-Version 1 remains synthetic; version 2 is the legacy normalized contract; direct-school snapshots are version 3 with source teachassist. The synthetic cache rejects all live sources. Credentials, grades, names, weights and history stay in memory, expire after 15 minutes without a successful refresh, and clear on sign-out/auth rejection. Appearance settings persist separately.
-
-Zod is overridden to 4.6.7. A version/source-checked node-forge backport runs after install and has a cryptographic regression test. Four npm alerts remain because the upstream node-forge release is still affected; they are documented, not suppressed.
-
-## Verification and deployment limits
-
-Unit/integration tests, lint/typechecking, web/server and Android bundle exports, and browser login tests use only synthetic data. See TESTING.md for recorded results and local screenshots.
-
-No school-account login, authenticated-school HTML capture, native-device interaction, hosting deployment, Redis provisioning, secret access, push or merge was performed. Authenticated layouts and school acceptable-use obligations require authorized verification. Production needs a deployed HTTPS app server, its public origin for native builds and server-only shared limiter configuration.
+Read `docs/TESTING.md` and `SEC_FIXES.md` before release.

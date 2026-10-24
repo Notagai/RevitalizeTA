@@ -51,3 +51,19 @@ test('preference writes remain ordered and recover from failed writes', async ()
   await assert.rejects(first); await second;
   assert.equal(await preferences.load(), 'light');
 });
+
+test('privacy mode persists independently and rejects corrupt settings', async () => {
+  const entries = new Map();
+  const storage = {
+    read: async key => entries.get(key) ?? null,
+    write: async (key, value) => { entries.set(key, value); },
+    remove: async key => { entries.delete(key); },
+  };
+  assert.equal(await new Preferences(storage).loadPrivacyMode(), false);
+  await new Preferences(storage).savePrivacyMode(true);
+  assert.equal(await new Preferences(storage).loadPrivacyMode(), true);
+  await new Preferences(storage).savePrivacyMode(false);
+  assert.equal(await new Preferences(storage).loadPrivacyMode(), false);
+  entries.set('privacy-mode.json', '{"unexpected":"value"}');
+  await assert.rejects(new Preferences(storage).loadPrivacyMode());
+});

@@ -21,7 +21,6 @@
       "package": "com.notagai.revitalizeta"
     },
     "web": {
-      "output": "server",
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
