@@ -56,56 +56,53 @@ export type SchoolCourse = {
   overall_mark: number | 'N/A'; isFinal: boolean; isMidterm: boolean; url: URL | null;
 };
 export function parseSchoolCourses(html: string): SchoolCourse[] {
-  const $ = document(html), courses: SchoolCourse[] = [];
-  // TeachAssist uses a three-column table (course/block, dates, mark).
-  // Older fixtures and installations may use five separate columns.
-  const tables = $('table').filter((_i, table) =>
-    $(table).attr('width') === '85%' || /Course\s*Name/i.test($(table).find('tr').first().text()));
-  if (!tables.length) return invalid();
-  const table = tables.filter((_i, item) =>
-    $(item).find('tr').toArray().some(row => /Block:\s*P?[1-5]/i.test($(row).text()))).first();
-  if (!table.length) return invalid();
-  let recognizedRows = 0;
-  table.find('tr').each((_index, row) => {
+  const $ = document(html);
+  // TeachAssist often has several layout/navigation tables. Find the table
+  // containing actual course rows, not a particular width or header string.
+  const tables = $('table').toArray();
+  const courseRows = (table: (typeof tables)[number]) => $(table).find('tr').toArray().filter(row => {
     const cells = $(row).children('td');
-    const rowText = clean($(row).text());
-    const firstCellText = clean(cells.eq(0).text());
-    // Cheerio joins adjacent table-cell text without spaces (NameBlockStart...).
-    // Identify headings from their own cell, not the concatenated row text.
-    if (!rowText || /^(?:Course\s*Name|Course\s*Info|Subject)$/i.test(firstCellText)
-      || /No (?:courses|subjects)/i.test(rowText)) return;
-    // A heading or inactive table row is not a course.
-    const isCompact = cells.length === 3;
-    if (!isCompact && cells.length < 5) return;
-    recognizedRows++;
-    if (/Dropped\s+on/i.test(rowText)) return;
-    const courseCell = clean(cells.eq(0).text());
-    const title = courseCell.match(/^([^:]+)\s*:\s*(.+?)(?=\s+Block:|$)/i);
-    const blockText = isCompact ? courseCell : clean(cells.eq(1).text());
-    const block = blockText.match(/Block:\s*P?([1-5])\b/i);
-    const room = blockText.match(/rm\.\s*([^,;]+?)(?:\s+Block:|$)/i)?.[1]?.trim() ?? 'N/A';
-    const dates = isCompact ? clean(cells.eq(1).text()) : '';
-    const start = isCompact ? dates.match(/(\d{4}-\d{2}-\d{2})/)?.[1]
-      : clean(cells.eq(2).text()).match(/\d{4}-\d{2}-\d{2}/)?.[0];
-    const end = isCompact ? dates.match(/\d{4}-\d{2}-\d{2}\s*~\s*(\d{4}-\d{2}-\d{2})/)?.[1]
-      : clean(cells.eq(3).text()).match(/\d{4}-\d{2}-\d{2}/)?.[0];
-    if (!title || !block || !start || !end || courses.length >= 40) return invalid();
-    const gradeCell = isCompact ? cells.eq(2) : cells.eq(4);
+    if (cells.length < 3 || cells.length > 6) return false;
+    const title = clean(cells.eq(0).text());
+    if (!/^([^:]+)\s*:\s*(.+)/.test(title)) return false;
+    const dateCells = cells.slice(1, -1).toArray().map(cell => clean($(cell).text())).join(' ');
+    return (dateCells.match(/\d{4}-\d{2}-\d{2}/g) ?? []).length >= 2;
+  });
+  const ranked = tables.map(table => ({ table, rows: courseRows(table) })).filter(entry => entry.rows.length)
+    .sort((a, b) => b.rows.length - a.rows.length);
+  if (!ranked.length) return invalid();
+  const rows = ranked[0].rows;
+  if (rows.length > 40) return invalid();
+
+  const courses: SchoolCourse[] = [];
+  for (const row of rows) {
+    const cells = $(row).children('td');
+    const titleText = clean(cells.eq(0).text());
+    const title = titleText.match(/^([^:]+)\s*:\s*(.+?)(?=\s+Block:|$)/i);
+    if (!title) return invalid();
+    const blockText = cells.slice(0, Math.min(2, cells.length - 1)).toArray()
+      .map(cell => clean($(cell).text())).join(' ');
+    const block = blockText.match(/\bBlock:\s*P?\s*([1-5])\b/i);
+    const room = blockText.match(/\brm\.\s*([^,;]+?)(?:\s+Block:|$)/i)?.[1]?.trim() ?? 'N/A';
+    const dateText = cells.slice(1, -1).toArray().map(cell => clean($(cell).text())).join(' ');
+    const dates = dateText.match(/\d{4}-\d{2}-\d{2}/g);
+    if (!dates || dates.length !== 2 || dates[0] > dates[1]) return invalid();
+    const gradeCell = cells.last();
     const markText = clean(gradeCell.text());
     const mark = markText.match(/(?:current\s*mark\s*=|(?:FINAL|MIDTERM)\s*MARK\s*:)\s*(\d+(?:\.\d+)?)\s*%/i);
-    const noMark = /^(?:N[/]A|Not available|No mark|Please see teacher for current status|See teacher)$/i.test(markText);
-    if (!mark && markText && !noMark) return invalid();
-    const href = gradeCell.find('a[href]').first().attr('href') ?? (isCompact ? undefined : cells.eq(0).find('a[href]').first().attr('href'));
+    const noGrade = !markText || /(?:please\s+see\s+teacher\s+for\s+current\s+status|no\s+mark|not\s+available|n[/]a|see\s+teacher)/i.test(markText);
+    if (!mark && !noGrade) return invalid();
+    const href = gradeCell.find('a[href]').first().attr('href')
+      ?? cells.eq(0).find('a[href]').first().attr('href');
     courses.push({
-      code: title[1].trim(), name: title[2].trim(), block: block[1], room, start_time: start, end_time: end,
+      code: title[1].trim(), name: title[2].trim(), block: block?.[1] ?? '0',
+      room, start_time: dates[0], end_time: dates[1],
       overall_mark: mark ? Number(mark[1]) : 'N/A', isFinal: /FINAL/i.test(markText),
       isMidterm: /MIDTERM/i.test(markText), url: href ? schoolCourseURL(href) : null,
     });
-  });
-  if (!recognizedRows && !/No (?:courses|subjects)/i.test(table.text())) return invalid();
+  }
   return courses;
 }
-
 export function parseSchoolReport(html: string) {
   const $ = document(html);
   const assignments: Record<string, unknown>[] = [];
