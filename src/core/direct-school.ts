@@ -1,7 +1,7 @@
 import { abortable, boundedText } from './http.ts';
 import { validSchoolCredentials, type Credentials } from './school-auth.ts';
 import { SyncError, type SchoolStage } from './sync.ts';
-import { parseSchoolCourses, parseSchoolReport, schoolCourseURL, schoolSnapshot } from './school-parser.ts';
+import { parseSchoolCourses, parseSchoolReport, schoolCourseURL, schoolSnapshot, type SchoolCourse } from './school-parser.ts';
 
 const LOGIN = 'https://ta.yrdsb.ca/live/index.php';
 
@@ -68,7 +68,7 @@ export async function fetchSchoolGrades(credentials: Credentials, signal: AbortS
     const html = await atStage('login-submission', () => request(new URL(LOGIN),
       new URLSearchParams({ username: credentials.username, password: credentials.password, subject_id: '0', submit: 'Login' })));
     const courses = await atStage('course-table', () => parseSchoolCourses(html));
-    const reports = [];
+    const reports: (SchoolCourse & ReturnType<typeof parseSchoolReport>)[] = [];
     for (const course of courses) {
       const report = course.url
         ? await atStage('course-report', async () => parseSchoolReport(await request(course.url!)))
