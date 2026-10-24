@@ -39,12 +39,15 @@ export default function CourseWeights() {
         <Heading>{course.name}</Heading>
         <CourseWeightEditor key={`${course.id}:${courseWeights[course.id] ?? course.credit ?? 1}`} code={course.code}
           weight={courseWeights[course.id] ?? course.credit ?? 1} onSave={weight => setCourseWeight(course.id, weight)} />
-        {!course.categories.length ? <Body muted>No category weights available.</Body> : course.categories.map(category => <View key={category.id}
+        {!course.categories.length ? <Body muted>No category weights available.</Body> : <>
+          {course.categories.every(category => category.weight === 0)
+            ? <Body muted>The school did not publish category weights for this course. Estimated weighted grades are unavailable.</Body> : null}
+          {course.categories.map(category => <View key={category.id}
           style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 6, flexWrap: 'wrap' }}>
           <Text style={{ color: colors.text, flex: 1, minWidth: 120, fontSize: 14 }}>{category.name}</Text>
-          <Text style={{ color: colors.muted, fontSize: 12 }}>{category.weight}% weight</Text>
+          <Text style={{ color: colors.muted, fontSize: 12 }}>{course.categories.every(item => item.weight === 0) ? 'Weight not published' : category.weight + '% weight'}</Text>
           <Text style={{ color: colors.accent, fontSize: 16, fontWeight: '700' }}>{isGradeVisible(course.id) ? percent(category.reportedAverage ?? categoryAverage(course, category.id)) : 'Hidden'}</Text>
-        </View>)}
+        </View>)}</>}
       </Card>
     </View>)}
     {courses.length ? <Body muted>Course weights combine category estimates in the dashboard. Default: 1 per course when credits are unavailable. Zero excludes a course. Weights and grades last for this session.</Body> : null}
