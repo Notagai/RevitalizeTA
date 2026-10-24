@@ -7,7 +7,7 @@ import { createSchoolAdapter, validSchoolCredentials } from '../src/core/school-
 import { RequestLimiter } from '../src/core/ta-api.ts';
 import { parseSchoolCourses, parseSchoolReport, schoolCourseURL, schoolSnapshot, schoolLoginForm, schoolReportsURL, schoolCoursePageKind } from '../src/core/school-parser.ts';
 import { fetchSchoolGrades } from '../src/core/direct-school.ts';
-import { SyncController } from '../src/core/sync.ts';
+import { SyncController, SyncError } from '../src/core/sync.ts';
 import { credentials, loginHTML, courseHTML, compactCourseHTML, reportHTML, mockSchool } from './fixtures/school-html.mjs';
 
 const require = createRequire(import.meta.url);
@@ -415,4 +415,27 @@ test('school page identification distinguishes a login screen from a report', ()
   assert.equal(schoolCoursePageKind('<html><form><input type="password"></form></html>'), 'login-page');
   assert.equal(schoolCoursePageKind('<html><h2>Student Reports</h2></html>'), 'report-page');
   assert.equal(schoolCoursePageKind('<html><h2>Welcome</h2></html>'), 'other-page');
+});
+
+test('school login form returned after POST is an auth error, not a timetable parsing error', async () => {
+  const mockFetch = async () => new Response(loginHTML, { headers: { 'content-type': 'text/html' } });
+  await assert.rejects(fetchSchoolGrades(credentials, signal(), mockFetch), error =>
+    error.code === 'auth' && error.stage === 'course-table' && error.reason === 'login-page');
+});
+
+test('explicit rejected-login page has a distinct safe reason', () => {
+  assert.throws(() => parseSchoolCourses('<html>Invalid Login</html>'),
+    error => error.code === 'auth' && error.reason === 'auth-rejected');
+});
+
+test('auth diagnostics survive grade-data clearing without retaining a snapshot', async () => {
+  const store = { load: async () => null, save: async () => {}, clear: async () => {} };
+  const controller = new SyncController(store, () => {});
+  await controller.refresh({ fetch: async () => { throw new SyncError('auth', 'course-table', 'login-page'); } });
+  assert.equal(controller.state.status, 'auth');
+  await controller.clear('auth');
+  assert.equal(controller.state.status, 'auth');
+  assert.equal(controller.state.problem, 'course-table');
+  assert.equal(controller.state.problemCode, 'login-page');
+  assert.equal(controller.state.snapshot, null);
 });
