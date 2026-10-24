@@ -17,7 +17,7 @@ export function parseLevel(value: string): AchievementLevel | null {
 export function parseLevelMark(value: string): AchievementLevel | null {
   // Named average or mark fields can contain a level (with arbitrary suffix
   // text in the table), but numeric percentage wins when present.
-  const match = value.match(/(?:current\s*mark|final\s*mark|midterm\s*mark|overall\s*(?:mark|average|grade))\s*[:=]\s*(?:level\s*)?([1-4])\s*([+-])?\b/i);
+  const match = value.match(/(?:current\s*mark|final\s*mark|midterm\s*mark|overall\s*(?:mark|average|grade))\s*[:=]\s*(?:level\s*)?([1-4])\s*([+-])?(?=\s|$|[;,])/i);
   if (match) return (match[1] + (match[2] ?? '')) as AchievementLevel;
   return parseLevel(value);
 }
