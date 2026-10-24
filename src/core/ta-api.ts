@@ -69,7 +69,12 @@ export function normalizeTAResponse(value: unknown, checkedAt = new Date().toISO
       }
       if (!parts) return invalid();
     }
+    const reportProblem = raw.reportProblem;
+    if (reportProblem !== undefined && (source !== 'teachassist'
+      || !['report-cell', 'report-assignment', 'report-weighting', 'report-layout', 'report-normalization'].includes(reportProblem as string)
+      || weights.length > 0 || assessments.length > 0)) return invalid();
     return { id, code, name: label(raw.name), term: `Semester ${semester}`, semester, ...(period ? { period } : {}),
+      ...(reportProblem === undefined ? {} : { reportProblem: reportProblem as Course['reportProblem'] }),
       ...(raw.room && raw.room !== 'Unknown Room' && raw.room !== 'N/A' ? { room: label(raw.room) } : {}),
       ...(raw.teacher ? { teacher: label(raw.teacher) } : {}),
       ...(raw.credit === undefined ? {} : { credit: numeric(raw.credit, 10) }),
