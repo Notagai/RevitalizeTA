@@ -94,56 +94,91 @@ export type SchoolCourse = {
   code: string; name: string; block: string; room: string; start_time: string; end_time: string;
   overall_mark: number | 'N/A'; isFinal: boolean; isMidterm: boolean; url: URL | null;
 };
-export function parseSchoolCourses(html: string): SchoolCourse[] {
+const isoDate = /\b\d{4}-\d{2}-\d{2}\b/g;
+const courseTitle = /^(.{2,130}?)\s*:\s*(.+?)(?=\s+Block\s*:|$)/i;
+const codePrefix = /^((?:[A-Za-z]{2,5}\d[A-Za-z0-9-]{1,14}))\s+(.+?)(?=\s+Block\s*:|$)/i;
+type CourseCell = { first: string; values: string[] };
+function possibleCourseTitle(value: string) {
+  if (value.length > 500) return null;
+  const match = value.match(courseTitle) ?? value.match(codePrefix);
+  if (!match) return null;
+  let code = match[1].trim();
+  if (code.includes(' - ')) code = code.slice(code.lastIndexOf(' - ') + 3).trim();
+  if (!/^[A-Za-z0-9][A-Za-z0-9 -]{1,100}$/.test(code)) return null;
+  const name = match[2].trim();
+  if (!name || name.length > 300) return null;
+  return { code, name };
+}
+function getCourseRows(html: string) {
   const $ = document(html);
-  // TeachAssist often has several layout/navigation tables. Find the table
-  // containing actual course rows, not a particular width or header string.
   const tables = $('table').toArray();
-  const courseRows = (table: (typeof tables)[number]) => $(table).find('tr').toArray().filter(row => {
-    const cells = $(row).children('td');
-    if (cells.length < 3 || cells.length > 6) return false;
-    const title = clean(cells.eq(0).text());
-    if (!/^([^:]+)\s*:\s*(.+)/.test(title)) return false;
-    const dateCells = cells.slice(1, -1).toArray().map(cell => clean($(cell).text())).join(' ');
-    return (dateCells.match(/\d{4}-\d{2}-\d{2}/g) ?? []).length >= 2;
+  const data: { cells: CourseCell; row: unknown }[] = [];
+  // Collect only direct cells from rows, regardless of whether the school used
+  // td/th, nested layout tables, a width attribute, or split date columns.
+  $('tr').each((_i, row) => {
+    const cells = $(row).children('td,th');
+    if (cells.length < 2 || cells.length > 10) return;
+    const values = cells.map((_j, cell) => clean($(cell).text())).get();
+    if (!possibleCourseTitle(values[0])) return;
+    data.push({ cells: { first: values[0], values }, row });
   });
-  const ranked = tables.map(table => ({ table, rows: courseRows(table) })).filter(entry => entry.rows.length)
-    .sort((a, b) => b.rows.length - a.rows.length);
-  if (!ranked.length) return invalid();
-  const rows = ranked[0].rows;
-  if (rows.length > 40) return invalid();
+  return { $, tables, data };
+}
 
+/**
+ * Non-identifying structural classification. Never reveal student names,
+ * grades, course codes, links, session tokens, or actual HTML.
+ */
+export function schoolTimetableFailure(html: string):
+  'course-no-tables' | 'course-no-rows' | 'course-no-dates' | 'course-unrecognized' {
+  const { tables, data } = getCourseRows(html);
+  if (!tables.length) return 'course-no-tables';
+  if (!data.length) return 'course-no-rows';
+  const withDates = data.filter(entry =>
+    (entry.cells.values.join(' ').match(isoDate) ?? []).length >= 2);
+  return withDates.length ? 'course-unrecognized' : 'course-no-dates';
+}
+
+export function parseSchoolCourses(html: string): SchoolCourse[] {
+  const { $, data } = getCourseRows(html);
+  if (!data.length || data.length > 40) return invalid();
   const courses: SchoolCourse[] = [];
-  for (const row of rows) {
-    const cells = $(row).children('td');
-    const titleText = clean(cells.eq(0).text());
-    const title = titleText.match(/^([^:]+)\s*:\s*(.+?)(?=\s+Block:|$)/i);
-    if (!title) return invalid();
-    const blockText = cells.length >= 5
-      ? clean(cells.eq(0).text()) + ' ' + clean(cells.eq(1).text())
-      : clean(cells.eq(0).text());
-    const block = blockText.match(/\bBlock:\s*P?\s*([1-5])\b/i);
-    const room = blockText.match(/\brm\.\s*([^,;]+?)(?:\s+Block:|$)/i)?.[1]?.trim().slice(0, 80) ?? 'N/A';
-    const dateText = cells.slice(1, -1).toArray().map(cell => clean($(cell).text())).join(' ');
-    const dates = dateText.match(/\d{4}-\d{2}-\d{2}/g);
-    if (!dates || dates.length !== 2 || dates[0] > dates[1]) return invalid();
-    const gradeCell = cells.last();
-    const markText = clean(gradeCell.text());
+
+  for (const item of data) {
+    const row = $(item.row as Parameters<ReturnType<typeof load>>[0]);
+    const cells = row.children('td,th');
+    const values = item.cells.values;
+    const parsedTitle = possibleCourseTitle(item.cells.first);
+    if (!parsedTitle) return invalid();
+    const dates = values.join(' ').match(isoDate) ?? [];
+    if (dates.length !== 2 || dates[0] > dates[1]) return invalid();
+    const meta = values.slice(0, Math.min(2, values.length)).join(' ');
+    const block = meta.match(/\bBlock\s*:\s*P?\s*([1-5])\b/i);
+    const room = meta.match(/\brm\.\s*([^\s,;]+)/i)?.[1] ?? 'N/A';
+    // Mark columns may be followed by auxiliary columns such as a status or
+    // credit. Scan rather than assuming the final cell is always the grade.
+    const markText = values.slice(1).join(' ');
     const mark = markText.match(/(?:current\s*mark\s*=|(?:FINAL|MIDTERM)\s*MARK\s*:)\s*(\d+(?:\.\d+)?)\s*%/i);
-    const noGrade = !markText || /(?:please\s+see\s+teacher\s+for\s+current\s+status|no\s+mark|not\s+available|n[/]a|see\s+teacher|no\s+grade)/i.test(markText);
     if (mark && Number(mark[1]) > 100) return invalid();
-    if (!mark && !noGrade) return invalid();
-    const href = gradeCell.find('a[href]').first().attr('href')
-      ?? cells.eq(0).find('a[href]').first().attr('href');
+    const noGrade = !markText || /(?:please\s+see\s+teacher\s+for\s+current\s+status|no\s+mark|not\s+available|n[/]a|see\s+teacher|no\s+grade)/i.test(markText);
+    const link = cells.find('a[href]').toArray().map(el => $(el).attr('href') ?? '')
+      .find(href => /^((?:\.\.\/)*viewReport\.php|\/live\/students\/viewReport\.php|https:\/\/ta\.yrdsb\.ca\/live\/students\/viewReport\.php)\?/i.test(href));
+    // A course without a current grade is valid. A grade-shaped page with a
+    // nonnumeric status is not silently converted to a grade.
+    const looksGraded = /(?:current\s*mark|final\s*mark|midterm\s*mark)\s*[:=]/i.test(markText);
+    if (!mark && looksGraded && !noGrade) return invalid();
     courses.push({
-      code: title[1].trim(), name: title[2].trim(), block: block?.[1] ?? '0',
-      room, start_time: dates[0], end_time: dates[1],
-      overall_mark: mark ? Number(mark[1]) : 'N/A', isFinal: /FINAL/i.test(markText),
-      isMidterm: /MIDTERM/i.test(markText), url: href ? schoolCourseURL(href) : null,
+      ...parsedTitle, block: block?.[1] ?? '0', room,
+      start_time: dates[0], end_time: dates[1],
+      overall_mark: mark ? Number(mark[1]) : 'N/A',
+      isFinal: /FINAL\s+MARK/i.test(markText), isMidterm: /MIDTERM\s+MARK/i.test(markText),
+      url: link ? schoolCourseURL(link) : null,
     });
   }
+  if (new Set(courses.map(c => c.code + ':' + c.start_time + ':' + c.block)).size !== courses.length) return invalid();
   return courses;
 }
+
 export function parseSchoolReport(html: string) {
   const $ = document(html);
   const assignments: Record<string, unknown>[] = [];
