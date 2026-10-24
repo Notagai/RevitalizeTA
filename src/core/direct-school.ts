@@ -115,13 +115,43 @@ export async function fetchSchoolGrades(credentials: Credentials, signal: AbortS
       const listing = await atStage('course-table', () => request(reportList));
       courses = await atStage('course-table', () => parseTimetable(listing));
     }
-    const reports: (SchoolCourse & ReturnType<typeof parseSchoolReport>)[] = [];
+    type ReportProblem = 'report-cell' | 'report-assignment' | 'report-weighting' | 'report-layout' | 'report-normalization';
+    type Report = ReturnType<typeof parseSchoolReport> & { reportProblem?: ReportProblem };
+    const unavailable = (reason: ReportProblem): Report =>
+      ({ assignments: [], weight_table: {}, reportProblem: reason });
+    const reports: (SchoolCourse & Report)[] = [];
+    const checkedAt = new Date().toISOString();
     for (const course of courses) {
-      const report = course.url
-        ? await atStage('course-report', async () => parseSchoolReport(await request(course.url!)))
-        : { assignments: [], weight_table: {} };
+      let report: Report = { assignments: [], weight_table: {} };
+      if (course.url) {
+        // HTTP, session, cancellation and authentication failures remain fatal.
+        // Only an unrecognized private report *format* is recoverable: show
+        // the real timetable mark and clearly label missing assessment details.
+        const html = await atStage('course-report', () => request(course.url!));
+        try {
+          report = parseSchoolReport(html);
+        } catch (error) {
+          if (!(error instanceof SyncError) || error.code !== 'partial') {
+            await atStage('course-report', () => { throw error; });
+            throw error;
+          }
+          const reason = error.reason;
+          report = unavailable(reason === 'report-cell' || reason === 'report-assignment' ||
+            reason === 'report-weighting' || reason === 'report-layout' ? reason : 'report-layout');
+        }
+        if (!report.reportProblem) {
+          // A parseable HTML table can still contain an invalid grading
+          // contract. Validate each report in isolation so one unsupported
+          // course does not block all courses or misattribute the failure.
+          try { schoolSnapshot([{ ...course, ...report }], checkedAt); }
+          catch (error) {
+            if (error instanceof SyncError && error.code !== 'partial') throw error;
+            report = unavailable('report-normalization');
+          }
+        }
+      }
       reports.push({ ...course, ...report });
     }
-    return await atStage('course-report', () => schoolSnapshot(reports, new Date().toISOString()));
+    return await atStage('course-report', () => schoolSnapshot(reports, checkedAt));
   } finally { cookies.clear(); }
 }
