@@ -14,7 +14,8 @@ function LevelGradeEditor({ course, part }: { course: Course; part: Assessment }
   const { levelOverrides, setLevelAssignmentGrade } = useApp();
   const level = part.level!;
   const { midpoint, min, max } = levelRange(level);
-  const saved = levelOverrides[course.id]?.[part.id];
+  const candidate = levelOverrides[course.id]?.[part.id];
+  const saved = validLevelOverride(level, candidate) ? candidate : undefined;
   const [draft, setDraft] = useState(saved === undefined ? '' : String(saved));
   const parsed = Number(draft);
   const valid = draft.trim() !== '' && /^(?:\d{1,3}(?:\.\d{1,2})?)$/.test(draft.trim())
@@ -66,7 +67,7 @@ export const AssignmentCard = memo(function AssignmentCard({ assignment, course 
       <Text style={{ color: colors.muted, fontSize: 12, lineHeight: 18 }}>
         {course.categories.find(c => c.id === part.category)?.name ?? part.category} · Weight {part.weight}
       </Text>
-      {part.level ? <LevelGradeEditor course={course} part={part} /> : <Body>
+      {part.level ? <LevelGradeEditor key={part.level} course={course} part={part} /> : <Body>
         {part.earned === null ? '—' : part.earned} / {part.possible || '—'} points
         {part.status !== 'graded' ? ' · ' + (part.status === 'ungraded' ? 'Pending' :
           part.status === 'missing' ? 'Missing' : 'Exempt') : ''}
