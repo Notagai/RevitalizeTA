@@ -122,7 +122,10 @@ export async function fetchSchoolGrades(credentials: Credentials, signal: AbortS
     const reports: (SchoolCourse & Report)[] = [];
     const checkedAt = new Date().toISOString();
     for (const course of courses) {
-      let report: Report = { assignments: [], weight_table: {} };
+      // A published mark without a report link is not evidence of zero assignments.
+      let report: Report = course.url || (course.overall_mark === 'N/A' && !course.overall_level)
+        ? { assignments: [], weight_table: {} }
+        : unavailable('report-layout');
       if (course.url) {
         // HTTP, session, cancellation and authentication failures remain fatal.
         // Only an unrecognized private report *format* is recoverable: show

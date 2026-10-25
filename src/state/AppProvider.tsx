@@ -91,7 +91,7 @@ export function AppProvider({ children }: PropsWithChildren) {
       // A different account must never inherit the preceding account's grades or baseline.
       if (session.current.username !== value.username) {
         session.current.credentials = null; session.current.username = ''; session.current.expiresAt = 0;
-        setSignedIn(false); setDisplayName(''); setCourseWeights({}); setRevealedGrades({});
+        setSignedIn(false); setDisplayName(''); setCourseWeights({}); setLevelOverrides({}); setRevealedGrades({});
         if (!await controller.clear()) return false;
       }
       if (generation !== session.current.generation) return false;
