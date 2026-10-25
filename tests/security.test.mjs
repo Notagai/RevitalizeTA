@@ -608,3 +608,49 @@ test('report-failure marker validation rejects invalid sources and fabricated as
   const bad = { ...marked, reportProblem: 'raw school HTML goes here' };
   assert.throws(() => schoolSnapshot([bad], '2026-10-24T17:00:00.000Z'));
 });
+
+test('multi-row assessment continues reading colored cells after the title row', () => {
+  const extended = reportHTML.replace(
+    '<td bgcolor="c0fea4">9 / 10 = 90% weight=1</td></tr><tr><td>Feedback omitted</td>',
+    '</tr><tr><td bgcolor="c0fea4">9 / 10 = 90% weight=1</td><td>Feedback omitted</td>');
+  const result = parseSchoolReport(extended);
+  assert.equal(result.assignments[0].name, 'Functions test');
+  assert.equal(result.assignments[0].KU[0].get, 16);
+  assert.equal(result.assignments[0].T[0].get, 9);
+});
+
+test('assessment scores without a supported assignment title fail instead of disappearing', () => {
+  const unsupported = reportHTML.replace(
+    '<td rowspan="2">Functions test</td>', '<td>Functions test</td>');
+  assert.throws(() => parseSchoolReport(unsupported), error =>
+    error instanceof SyncError && error.reason === 'report-assignment');
+});
+
+test('published course mark without a report link is marked incomplete', async () => {
+  const unlinked = compactCourseHTML().replace(/<a href="[^"]+">current mark = 94\.5%<\/a>/,
+    'current mark = 94.5%');
+  const fakeFetch = async (_url, options) => new Response(
+    options.method === 'POST' ? unlinked : loginHTML,
+    { headers: { 'content-type': 'text/html' } });
+  const snapshot = await fetchSchoolGrades(credentials, signal(), fakeFetch);
+  assert.equal(snapshot.courses[0].reportedAverage, 94.5);
+  assert.equal(snapshot.courses[0].reportProblem, 'report-layout');
+  assert.deepEqual(snapshot.courses[0].assessments, []);
+  assert.equal(snapshot.courses[1].reportProblem, undefined);
+});
+
+test('partial course imports do not invent deleted or newly created assessments', async () => {
+  const course = parseSchoolCourses(compactCourseHTML())[0];
+  const time = '2026-10-24T17:00:00.000Z';
+  const complete = schoolSnapshot([{ ...course, ...parseSchoolReport(observedShapeReport) }], time);
+  const incomplete = schoolSnapshot([{ ...course, assignments: [], weight_table: {},
+    reportProblem: 'report-layout' }], time);
+  const { diffSnapshots } = await import('../src/core/sync.ts');
+  assert.deepEqual(diffSnapshots(complete, incomplete), []);
+  assert.deepEqual(diffSnapshots(incomplete, complete), []);
+  const changed = structuredClone(incomplete);
+  changed.courses[0].reportedAverage = 93;
+  assert.equal(diffSnapshots(complete, changed).length, 1);
+  assert.equal(diffSnapshots(complete, changed)[0].description,
+    'Course details, reported average or category weights changed');
+});
