@@ -32,7 +32,11 @@ export function diffSnapshots(before: Snapshot | null, after: Snapshot): Change[
     if (!old) { changes.push({ courseId: course.id, description: 'Course added' }); continue; }
     const { assessments: oldAssessments, reportProblem: oldProblem, ...oldDetails } = old;
     const { assessments, reportProblem: newProblem, ...details } = course;
-    const normalize = (value: typeof details) => ({ ...value, categories: [...value.categories].sort((a, b) => a.id.localeCompare(b.id)) });
+    const normalize = (value: typeof details) => ({
+      ...value,
+      // A failed assessment import has unknown categories, not confirmed deletions.
+      categories: oldProblem || newProblem ? [] : [...value.categories].sort((a, b) => a.id.localeCompare(b.id)),
+    });
     if (stable(normalize(oldDetails)) !== stable(normalize(details))) changes.push({ courseId: course.id, description: 'Course details, reported average or category weights changed' });
     // An unsupported report is incomplete, NOT proof that assignments were deleted.
     // Neither entering nor recovering from a partial import yields fabricated changes.
