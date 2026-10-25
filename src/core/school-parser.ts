@@ -283,52 +283,75 @@ export function parseSchoolReport(html: string) {
     });
   }
 
-  // Grade cells can contain nested tables. Read colored descendants, but only
-  // store cells with actual grade/status data and a declared numeric weight.
-  $('table[width="100%"] tr').each((_i, row) => {
-    const title = $(row).children('td[rowspan]').first();
-    if (!title.length) return;
-    if (assignments.length >= 2000) return reportInvalid('report-assignment');
-    const name = text(title);
-    if (!name) return reportInvalid('report-assignment');
-    const assignment: Record<string, unknown> = { name };
+  // Collect all score cells across the full rowspan of an assignment rather
+  // than ignoring grades on continuation rows. Never interpret an unsupported
+  // grade row as an empty/no-assessments report.
+  $('table[width="100%"]').each((_tableIndex, table) => {
+    if ($(table).parents('table[width="100%"]').length) return;
+    const rows = $(table).children('tr').add($(table).children('tbody,thead,tfoot').children('tr'));
+    let active: Record<string, unknown> | null = null;
+    let remainingRows = 0;
     let parts = 0;
-    $(row).find('td[bgcolor]').each((_j, cell) => {
-      const category = colors[($(cell).attr('bgcolor') ?? '').replace('#', '').toLowerCase()];
-      if (!category) return;
-      const value = text(cell);
-      if (!value) return;
-      const points = value.match(/(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)/);
-      const levelToken = value.match(/\b(?:achievement\s+)?level\s*[:=]?\s*([1-4])\s*([+-])?(?=\s|$|[;,])/i);
-      const bareLevel = !points && value.match(/^\s*([1-4])\s*([+-])?(?=\s|$|[;,])/);
-      const level = levelToken ? parseLevel('Level ' + levelToken[1] + (levelToken[2] ?? '')) :
-        bareLevel ? parseLevel(bareLevel[1] + (bareLevel[2] ?? '')) : null;
-      const weight = value.match(/\bweight\s*=\s*(\d+(?:\.\d+)?)/i);
-      const noWeight = /\bno\s+weight\b/i.test(value);
-      const pending = /not\s*finished|unfinished|ungraded|pending|N\/A/i.test(value);
-      const exempt = /\bexempt\b|\bno\s+mark\b/i.test(value);
-      const missing = /\bmissing\b/i.test(value);
-      if (!points && !level && !pending && !exempt && !missing) {
-        // Never quietly drop a school grade with an unfamiliar score format.
-        if (weight || noWeight || /\d\s*%/.test(value)) return reportInvalid('report-cell');
-        return;
+    rows.each((_rowIndex, row) => {
+      const currentRow = $(row);
+      const title = currentRow.children('td[rowspan]').first();
+      if (title.length) {
+        if (active) return reportInvalid('report-assignment');
+        const span = Number(title.attr('rowspan'));
+        if (!Number.isSafeInteger(span) || span < 1 || span > 100) return reportInvalid('report-assignment');
+        const name = text(title);
+        if (!name || assignments.length >= 2000) return reportInvalid('report-assignment');
+        active = { name };
+        remainingRows = span;
+        parts = 0;
       }
-      if ((!weight && !noWeight) || !weight_table[category]) return reportInvalid('report-cell');
-      const earned = points && !level ? Number(points[1]) : null;
-      const possible = points && !level ? Number(points[2]) : 0;
-      const weighting = weight ? Number(weight[1]) : 0;
-      if (!Number.isFinite(possible) || !Number.isFinite(weighting) || weighting > 100
-        || earned !== null && (earned > possible || possible <= 0)) return reportInvalid('report-cell');
-      const existing = assignment[category] as Record<string, unknown>[] | undefined;
-      if (existing && existing.length >= 20) return reportInvalid('report-assignment');
-      const component = { get: pending || exempt || missing ? null : earned, total: possible,
-        weight: weighting, finished: !pending && !missing, exempt, missing,
-        ...(!pending && !exempt && !missing && level ? { level } : {}) };
-      if (existing) existing.push(component); else assignment[category] = [component];
-      parts++;
+      currentRow.find('td[bgcolor]').each((_cellIndex, cell) => {
+        const category = colors[($(cell).attr('bgcolor') ?? '').replace('#', '').toLowerCase()];
+        if (!category) return;
+        const value = text(cell);
+        if (!value) return;
+        const points = value.match(/(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)/);
+        const levelToken = value.match(/\b(?:achievement\s+)?level\s*[:=]?\s*([1-4])\s*([+-])?(?=\s|$|[;,])/i);
+        const bareLevel = !points && value.match(/^\s*([1-4])\s*([+-])?(?=\s|$|[;,])/);
+        const level = levelToken ? parseLevel('Level ' + levelToken[1] + (levelToken[2] ?? '')) :
+          bareLevel ? parseLevel(bareLevel[1] + (bareLevel[2] ?? '')) : null;
+        const weight = value.match(/\bweight\s*=\s*(\d+(?:\.\d+)?)/i);
+        const noWeight = /\bno\s+weight\b/i.test(value);
+        const pending = /not\s*finished|unfinished|ungraded|pending|N\/A/i.test(value);
+        const exempt = /\bexempt\b|\bno\s+mark\b/i.test(value);
+        const missing = /\bmissing\b/i.test(value);
+        if (!points && !level && !pending && !exempt && !missing) {
+          // Unknown score formats (including percentages without raw points)
+          // are not treated as successful imports.
+          if (weight || noWeight || /\d\s*%/.test(value)) return reportInvalid('report-cell');
+          return;
+        }
+        if (!active) return reportInvalid('report-assignment');
+        if ((!weight && !noWeight) || !weight_table[category]) return reportInvalid('report-cell');
+        const earned = points && !level ? Number(points[1]) : null;
+        const possible = points && !level ? Number(points[2]) : 0;
+        const weighting = weight ? Number(weight[1]) : 0;
+        if (!Number.isFinite(possible) || !Number.isFinite(weighting) || weighting > 100
+          || earned !== null && (earned > possible || possible <= 0)) return reportInvalid('report-cell');
+        const entry = active as Record<string, unknown>;
+        const existing = entry[category] as Record<string, unknown>[] | undefined;
+        if (existing && existing.length >= 20) return reportInvalid('report-assignment');
+        const component = { get: pending || exempt || missing ? null : earned, total: possible,
+          weight: weighting, finished: !pending && !missing, exempt, missing,
+          ...(!pending && !exempt && !missing && level ? { level } : {}) };
+        if (existing) existing.push(component); else entry[category] = [component];
+        parts++;
+      });
+      if (active) {
+        remainingRows--;
+        if (remainingRows === 0) {
+          if (!parts) return reportInvalid('report-assignment');
+          assignments.push(active);
+          active = null;
+        }
+      }
     });
-    if (!parts) return reportInvalid('report-assignment');
-    assignments.push(assignment);
+    if (active) return reportInvalid('report-assignment');
   });
   if (!Object.keys(weight_table).length && !/No (?:assessments|assignments|marks)/i.test($.root().text())) return reportInvalid('report-layout');
   return { assignments, weight_table };
