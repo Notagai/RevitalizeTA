@@ -22,6 +22,7 @@ export function parseTheme(raw: string | null): ThemeChoice {
 export class Preferences {
   private storage: SlotStorage;
   private pending: Promise<void> = Promise.resolve();
+  private privacyPending: Promise<void> = Promise.resolve();
   constructor(storage: SlotStorage) { this.storage = storage; }
   async loadPrivacyMode() {
     const raw = await this.storage.read('privacy-mode.json');
@@ -30,8 +31,12 @@ export class Preferences {
     if (typeof parsed !== 'boolean') throw new Error('PRIVACY_INVALID');
     return parsed;
   }
-  async savePrivacyMode(enabled: boolean) {
-    await this.storage.write('privacy-mode.json', JSON.stringify(enabled));
+  savePrivacyMode(enabled: boolean) {
+    // Serialize rapid toggles so an older, slower write cannot undo a newer choice.
+    const operation = this.privacyPending.catch(() => {}).then(() =>
+      this.storage.write('privacy-mode.json', JSON.stringify(enabled)));
+    this.privacyPending = operation;
+    return operation;
   }
   async load() { return parseTheme(await this.storage.read('preferences.json')); }
   async loadAppearance() { return parseAppearance(await this.storage.read('preferences.json')); }
