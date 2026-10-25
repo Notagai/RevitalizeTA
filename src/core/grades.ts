@@ -1,4 +1,4 @@
-import { calculatedAverage, type Assessment, type Comparison, type Course } from './model.ts';
+import { assessmentPercent, estimatedCourseAverage, type Assessment, type Comparison, type Course, type LevelOverrides } from './model.ts';
 
 export function gradeDelta(current: number | null, previous: number | null | undefined): number | null {
   return current === null || previous === null || previous === undefined ? null : current - previous;
@@ -15,10 +15,11 @@ export function averageDelta(courses: Course[], comparison?: Comparison): number
 }
 
 /** Category-weighted estimates, combined using course credit weights. */
-export function weightedAverage(courses: Course[], overrides: Readonly<Record<string, number>> = {}): number | null {
+export function weightedAverage(courses: Course[], overrides: Readonly<Record<string, number>> = {},
+  levelOverrides: Readonly<Record<string, LevelOverrides>> = {}): number | null {
   let total = 0, weights = 0;
   for (const course of courses) {
-    const grade = calculatedAverage(course);
+    const grade = estimatedCourseAverage(course, levelOverrides[course.id]);
     const weight = overrides[course.id] ?? course.credit ?? 1;
     if (grade !== null && Number.isFinite(weight) && weight > 0) { total += grade * weight; weights += weight; }
   }
@@ -28,7 +29,7 @@ export function weightedAverage(courses: Course[], overrides: Readonly<Record<st
 export const assessmentSorts = ['Newest', 'Oldest', 'Highest grade', 'Lowest grade', 'Name', 'Weight'] as const;
 export type AssessmentSort = typeof assessmentSorts[number];
 export type Assignment = { id: string; name: string; date?: string; parts: Assessment[]; grade: number | null; weight: number };
-export function sortedAssignments(assessments: Assessment[], sort: AssessmentSort): Assignment[] {
+export function sortedAssignments(assessments: Assessment[], sort: AssessmentSort, overrides: LevelOverrides = {}): Assignment[] {
   const groups = new Map<string, Assignment>();
   for (const assessment of assessments) {
     const id = assessment.assignmentId ?? assessment.id;
@@ -38,12 +39,10 @@ export function sortedAssignments(assessments: Assessment[], sort: AssessmentSor
   }
   const assignments = [...groups.values()];
   for (const group of assignments) {
-    const graded = group.parts.filter(a => a.status === 'graded' && a.weight > 0);
-    const weights = graded.reduce((sum, a) => sum + a.weight, 0);
-    const allGraded = group.parts.filter(a => a.status === 'graded');
-    const possible = allGraded.reduce((sum, a) => sum + a.possible, 0);
-    group.grade = weights ? graded.reduce((sum, a) => sum + a.earned! / a.possible * 100 * a.weight, 0) / weights
-      : possible ? allGraded.reduce((sum, a) => sum + a.earned!, 0) / possible * 100 : null;
+    const graded = group.parts.map(a => ({ a, score: assessmentPercent(a, overrides) }))
+      .filter((p): p is { a: Assessment; score: number } => p.score !== null);
+    const weights = graded.reduce((sum, p) => sum + (p.a.weight > 0 ? p.a.weight : 1), 0);
+    group.grade = weights ? graded.reduce((sum, p) => sum + p.score * (p.a.weight > 0 ? p.a.weight : 1), 0) / weights : null;
   }
   return assignments.sort((a, b) => {
     let order = 0;
@@ -58,10 +57,12 @@ export function sortedAssignments(assessments: Assessment[], sort: AssessmentSor
   });
 }
 
-export function categoryAverage(course: Course, categoryId: string): number | null {
-  const entries = course.assessments.filter(a => a.category === categoryId && a.status === 'graded' && a.weight > 0);
-  const weight = entries.reduce((sum, a) => sum + a.weight, 0);
-  return weight ? entries.reduce((sum, a) => sum + a.earned! / a.possible * 100 * a.weight, 0) / weight : null;
+export function categoryAverage(course: Course, categoryId: string, overrides: LevelOverrides = {}): number | null {
+  const entries = course.assessments.filter(a => a.category === categoryId && a.weight > 0)
+    .map(a => ({ a, score: assessmentPercent(a, overrides) }))
+    .filter((entry): entry is { a: Assessment; score: number } => entry.score !== null);
+  const weight = entries.reduce((sum, entry) => sum + (entry.a.weight > 0 ? entry.a.weight : 1), 0);
+  return weight ? entries.reduce((sum, entry) => sum + entry.score * (entry.a.weight > 0 ? entry.a.weight : 1), 0) / weight : null;
 }
 
 export function gradeSummary(courses: Course[]) {
@@ -86,4 +87,15 @@ export function gradeBands(courses: Course[]) {
     { label: '50–59%', min: 50, max: 60 },
     { label: 'Below 50%', min: 0, max: 50 },
   ].map(band => ({ ...band, count: courses.filter(c => c.reportedAverage !== null && c.reportedAverage >= band.min && c.reportedAverage < band.max).length }));
+}
+
+/** A mixed percentage-and-level average is necessarily an estimate. */
+export function estimatedOverallAverage(courses: Course[],
+  overrides: Readonly<Record<string, LevelOverrides>> = {}): number | null {
+  const grades = courses.map(course => estimatedCourseAverage(course, overrides[course.id]))
+    .filter((grade): grade is number => grade !== null);
+  return grades.length ? grades.reduce((sum, grade) => sum + grade, 0) / grades.length : null;
+}
+export function estimatedCourseCount(courses: Course[], overrides: Readonly<Record<string, LevelOverrides>> = {}) {
+  return courses.filter(course => estimatedCourseAverage(course, overrides[course.id]) !== null).length;
 }

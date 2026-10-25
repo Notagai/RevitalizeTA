@@ -1,12 +1,13 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Link, useLocalSearchParams } from 'expo-router';
 import { FlatList, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useApp } from '../../state/AppProvider';
-import { calculatedAverage } from '../../core/model';
+import { calculatedAverage, estimatedCourseAverage } from '../../core/model';
 import { assessmentSorts, gradeDelta, sortedAssignments, type AssessmentSort } from '../../core/grades';
 import { courseSemester } from '../../core/timetable';
-import { percent } from '../../core/presentation';
+import { percent, reportIssueMessage } from '../../core/presentation';
+import { levelLabel, levelBandLabel } from '../../core/levels';
 import { Action, BackButton, Body, Card, Heading } from '../../ui/components';
 import { GradeDelta, GradeRing } from '../../ui/grade-visuals';
 import { AssignmentCard } from '../../ui/assignment-card';
@@ -17,14 +18,17 @@ import { GradeReveal } from '../../ui/grade-reveal';
 const filters = ['All', 'Graded', 'Missing', 'Pending', 'Exempt'] as const;
 export default function CourseDetails() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { sync, ready, isGradeVisible } = useApp();
+  const { sync, ready, isGradeVisible, levelOverrides } = useApp();
   const { colors } = useTheme();
   const [filter, setFilter] = useState<typeof filters[number]>('All');
   const [sort, setSort] = useState<AssessmentSort>('Newest');
   const course = sync.snapshot?.courses.find(c => c.id === id);
+  const overrides = course ? levelOverrides[course.id] : undefined;
+  const inferred = course ? calculatedAverage(course, overrides) : null;
+  const estimate = course ? estimatedCourseAverage(course, overrides) : null;
   const visible = !course || isGradeVisible(course.id);
-  const assignments = useMemo(() => sortedAssignments(course?.assessments ?? [], sort).filter(assignment =>
-    filter === 'All' || assignment.parts.some(a => a.status === (filter === 'Pending' ? 'ungraded' : filter.toLowerCase()))), [course, sort, filter]);
+  const assignments = sortedAssignments(course?.assessments ?? [], sort, overrides).filter(assignment =>
+    filter === 'All' || assignment.parts.some(a => a.status === (filter === 'Pending' ? 'ungraded' : filter.toLowerCase())));
   const previousAverage = sync.snapshot?.comparison?.courses.find(c => c.id === id)?.reportedAverage;
   return <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={{ flex: 1, backgroundColor: colors.background }}>
     <FlatList data={visible ? assignments : []} keyExtractor={item => item.id} keyboardShouldPersistTaps="handled"
@@ -42,16 +46,30 @@ export default function CourseDetails() {
           {visible ? <>
           <Card>
             <View style={styles.summary}>
-              <GradeRing value={course.reportedAverage} label="reported grade" />
+              {course.reportedLevel ? <View style={{ minWidth: 130, flex: 1, gap: 4 }}>
+                <Text style={{ color: colors.muted, fontSize: 12 }}>School-reported grade</Text>
+                <Text style={{ color: colors.accent, fontSize: 27, fontWeight: '700' }}>{levelLabel(course.reportedLevel)}</Text>
+                <Text style={{ color: colors.muted, fontSize: 12 }}>{levelBandLabel(course.reportedLevel)} official range</Text>
+              </View> : <GradeRing value={course.reportedAverage} label="reported grade" />}
               <View style={{ flex: 1, minWidth: 120, gap: 8 }}>
-                <Text style={{ color: colors.muted, fontSize: 12 }}>Estimated weighted average</Text>
-                <Text style={[styles.estimate, { color: colors.accent }]}>{percent(calculatedAverage(course))}</Text>
-                <GradeDelta value={gradeDelta(course.reportedAverage, previousAverage)} />
+                <Text style={{ color: colors.muted, fontSize: 12 }}>Estimated course average</Text>
+                <Text style={[styles.estimate, { color: colors.accent }]}>{estimate === null ? 'Not available' : '~' + percent(estimate)}</Text>
+                <Text style={{ color: colors.muted, fontSize: 12, lineHeight: 17 }}>
+                  {inferred !== null ? 'Calculated from available assessments and any personal level conversions.' :
+                    course.reportedLevel ? 'Midpoint of the official level range, not a precise reported percentage.' :
+                    'Uses the reported percentage when assessments are unavailable.'}
+                </Text>
+                {!course.reportedLevel ? <GradeDelta value={gradeDelta(course.reportedAverage, previousAverage)} /> : null}
               </View>
             </View>
             <Link href={{ pathname: '/weights', params: { course: course.id } }} style={[styles.link, { color: colors.accent }]}>Course weights</Link>
           </Card>
           <Heading>Assessments</Heading>
+          {course.reportProblem ? <Card>
+            <Text style={{ color: colors.danger, fontSize: 14, fontWeight: '700' }}>Assessment import incomplete</Text>
+            <Body>{reportIssueMessage(course.reportProblem)}</Body>
+            <Body muted>Your reported course mark remains available. Individual assessment results could not be verified. Diagnostic: {course.reportProblem}</Body>
+          </Card> : null}
           <ChoiceChips label="Assessment status" options={filters} value={filter} onChange={setFilter} />
           <ChoiceChips label="Sort assessments" options={assessmentSorts} value={sort} onChange={setSort} />
           {!course.assessments.some(a => a.date) && course.assessments.length > 0 && (sort === 'Newest' || sort === 'Oldest')
@@ -62,7 +80,7 @@ export default function CourseDetails() {
           </Card>}
         </>}
       </View>}
-      ListEmptyComponent={course && visible ? <Card><Body muted>{course.assessments.length ? 'No assessments match this filter.' : 'No assessments yet.'}</Body></Card> : undefined}
+      ListEmptyComponent={course && visible ? <Card><Body muted>{course.reportProblem ? 'Assessment details are unavailable until the report format is supported.' : course.assessments.length ? 'No assessments match this filter.' : 'No assessments yet.'}</Body></Card> : undefined}
       ListFooterComponent={visible && (sort !== 'Newest' || filter !== 'All') ? <View style={{ paddingTop: 16 }}><Action label="Reset sort and filters" onPress={() => { setSort('Newest'); setFilter('All'); }} /></View> : undefined}
     />
   </SafeAreaView>;

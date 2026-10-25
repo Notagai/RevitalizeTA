@@ -1,14 +1,21 @@
 import { parseSnapshot, type Snapshot } from './model.ts';
 
 export type Failure = 'offline' | 'auth' | 'partial' | 'rate-limited' | 'unavailable' | 'cancelled' | 'storage';
+/** Safe diagnostic labels only. Never include URLs, HTML, credentials, or cookies in errors. */
+export type SchoolStage = 'initial-page' | 'login-submission' | 'course-table' | 'course-report';
+export type SchoolProblem = 'redirect' | 'status' | 'content-type' | 'body-stream' | 'cookie' | 'parser' | 'native-exception' | 'login-method' | 'course-layout' | 'portal-page' | 'login-page' | 'auth-rejected' | 'course-no-tables' | 'course-no-rows' | 'course-no-dates' | 'course-unrecognized' | 'report-cell' | 'report-assignment' | 'report-weighting' | 'report-layout' | 'report-normalization';
 export type SyncStatus = 'never' | 'checking' | 'deleting' | 'changed' | 'unchanged' | Failure;
 export type Change = { courseId: string; description: string };
-export type SyncState = { status: SyncStatus; snapshot: Snapshot | null; lastAttempt: string | null; changes: Change[] };
+export type SyncState = { status: SyncStatus; snapshot: Snapshot | null; lastAttempt: string | null; changes: Change[]; problem?: SchoolStage; problemCode?: SchoolProblem };
 export interface SnapshotStore { load(): Promise<unknown>; save(snapshot: Snapshot): Promise<void>; clear(): Promise<void> }
 export interface Adapter { fetch(signal: AbortSignal): Promise<unknown> }
 export class SyncError extends Error {
   readonly code: Failure;
-  constructor(code: Failure) { super(code); this.code = code; }
+  readonly stage?: SchoolStage;
+  readonly reason?: SchoolProblem;
+  constructor(code: Failure, stage?: SchoolStage, reason?: SchoolProblem) {
+    super(code); this.code = code; this.stage = stage; this.reason = reason;
+  }
 }
 export const initialState: SyncState = { status: 'never', snapshot: null, lastAttempt: null, changes: [] };
 
@@ -23,15 +30,23 @@ export function diffSnapshots(before: Snapshot | null, after: Snapshot): Change[
   for (const course of after.courses) {
     const old = before.courses.find(c => c.id === course.id);
     if (!old) { changes.push({ courseId: course.id, description: 'Course added' }); continue; }
-    const { assessments: oldAssessments, ...oldDetails } = old;
-    const { assessments, ...details } = course;
-    const normalize = (value: typeof details) => ({ ...value, categories: [...value.categories].sort((a, b) => a.id.localeCompare(b.id)) });
+    const { assessments: oldAssessments, reportProblem: oldProblem, ...oldDetails } = old;
+    const { assessments, reportProblem: newProblem, ...details } = course;
+    const normalize = (value: typeof details) => ({
+      ...value,
+      // A failed assessment import has unknown categories, not confirmed deletions.
+      categories: oldProblem || newProblem ? [] : [...value.categories].sort((a, b) => a.id.localeCompare(b.id)),
+    });
     if (stable(normalize(oldDetails)) !== stable(normalize(details))) changes.push({ courseId: course.id, description: 'Course details, reported average or category weights changed' });
-    for (const a of assessments) {
-      const previous = oldAssessments.find(item => item.id === a.id);
-      if (!previous || stable(previous) !== stable(a)) changes.push({ courseId: course.id, description: previous ? 'Assessment changed' : 'Assessment added' });
+    // An unsupported report is incomplete, NOT proof that assignments were deleted.
+    // Neither entering nor recovering from a partial import yields fabricated changes.
+    if (!oldProblem && !newProblem) {
+      for (const a of assessments) {
+        const previous = oldAssessments.find(item => item.id === a.id);
+        if (!previous || stable(previous) !== stable(a)) changes.push({ courseId: course.id, description: previous ? 'Assessment changed' : 'Assessment added' });
+      }
+      for (const a of oldAssessments) if (!assessments.some(item => item.id === a.id)) changes.push({ courseId: course.id, description: 'Assessment removed' });
     }
-    for (const a of oldAssessments) if (!assessments.some(item => item.id === a.id)) changes.push({ courseId: course.id, description: 'Assessment removed' });
   }
   for (const c of before.courses) if (!after.courses.some(item => item.id === c.id)) changes.push({ courseId: c.id, description: 'Course removed' });
   return changes;
@@ -46,8 +61,10 @@ export class SyncController {
   private store: SnapshotStore;
   private notify: (state: SyncState) => void;
   private now: () => string;
-  constructor(store: SnapshotStore, notify: (state: SyncState) => void, now = () => new Date().toISOString()) {
-    this.store = store; this.notify = notify; this.now = now;
+  private deadlineMs: number;
+  constructor(store: SnapshotStore, notify: (state: SyncState) => void,
+    now = () => new Date().toISOString(), deadlineMs = 15000) {
+    this.store = store; this.notify = notify; this.now = now; this.deadlineMs = deadlineMs;
   }
   private publish(next: SyncState) { this.state = next; this.notify(next); }
   async hydrate() {
@@ -61,7 +78,7 @@ export class SyncController {
     if (this.pending) return this.pending;
     const abort = new AbortController();
     this.abort = abort;
-    this.publish({ ...this.state, status: 'checking', lastAttempt: this.now(), changes: [] });
+    this.publish({ ...this.state, status: 'checking', lastAttempt: this.now(), changes: [], problem: undefined, problemCode: undefined });
     this.pending = this.run(adapter, abort).finally(() => { this.pending = null; this.abort = null; });
     return this.pending;
   }
@@ -69,7 +86,7 @@ export class SyncController {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const deadline = new Promise<never>((_, reject) => {
-        timer = setTimeout(() => { reject(new SyncError('unavailable')); abort.abort(); }, 15000);
+        timer = setTimeout(() => { reject(new SyncError('unavailable')); abort.abort(); }, this.deadlineMs);
         abort.signal.addEventListener('abort', () => reject(new SyncError('cancelled')), { once: true });
       });
       const raw = await Promise.race([adapter.fetch(abort.signal), deadline]);
@@ -83,9 +100,11 @@ export class SyncController {
       const changes = diffSnapshots(this.state.snapshot, snapshot);
       try { await this.store.save(snapshot); } catch { throw new SyncError('storage'); }
       if (abort.signal.aborted) throw new SyncError('cancelled');
-      this.publish({ ...this.state, snapshot, changes, status: changes.length ? 'changed' : 'unchanged' });
+      this.publish({ ...this.state, snapshot, changes, status: changes.length ? 'changed' : 'unchanged', problem: undefined, problemCode: undefined });
     } catch (error) {
-      this.publish({ ...this.state, status: error instanceof SyncError ? error.code : 'partial', changes: [] });
+      this.publish({ ...this.state, status: error instanceof SyncError ? error.code : 'partial',
+        problem: error instanceof SyncError ? error.stage : undefined,
+        problemCode: error instanceof SyncError ? error.reason : 'native-exception', changes: [] });
     } finally { if (timer) clearTimeout(timer); }
   }
   cancel() { this.abort?.abort(); }
@@ -97,8 +116,12 @@ export class SyncController {
   private async deleteData(status: 'never' | 'auth') {
     this.cancel();
     await this.pending;
+    // Keep only the fixed diagnostic labels across an authentication-driven
+    // sign-out; the previous snapshot and account are still cleared.
+    const diagnostic = status === 'auth'
+      ? { problem: this.state.problem, problemCode: this.state.problemCode } : {};
     this.publish({ ...this.state, status: 'deleting', changes: [] });
-    try { await this.store.clear(); this.publish({ ...initialState, status }); return true; }
+    try { await this.store.clear(); this.publish({ ...initialState, status, ...diagnostic }); return true; }
     catch { this.publish({ ...this.state, status: 'storage' }); return false; }
   }
 }

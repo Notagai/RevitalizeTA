@@ -37,7 +37,7 @@ export default function Settings() {
     </Card>
     <ThemeEditor />
     <Card><Heading>Privacy</Heading>
-      <Body>RevitalizeTA is unofficial and is not affiliated with TeachAssist or YRDSB. Login goes through the RevitalizeTA app server to the official TeachAssist website. The unofficial TA API is not used.</Body>
+      <Body>RevitalizeTA is unofficial and is not affiliated with TeachAssist or YRDSB. The Android/iOS app connects directly to the official TeachAssist website over HTTPS. No RevitalizeTA proxy is used.</Body>
       <Body muted>Credentials and grades stay in memory. Sessions expire after 15 minutes without a successful refresh. Refresh is manual; the app does not log credentials or grades.</Body>
       <Link href="https://ta.yrdsb.ca/" style={{ color: colors.accent, paddingVertical: 14, fontSize: 16, minHeight: 48 }}>Official TeachAssist website</Link>
     </Card>

@@ -2,12 +2,16 @@ import { createContext, useContext } from 'react';
 import type { ThemeChoice } from '../core/preferences';
 import type { SyncState } from '../core/sync';
 import type { Credentials } from '../core/school-auth';
+import type { LevelOverrides } from '../core/model';
 
 export type AppState = {
   sync: SyncState; ready: boolean; displayName: string; signedIn: boolean;
   theme: ThemeChoice; setTheme: (value: ThemeChoice) => void;
   mainColor: string; accentColor: string; setColors: (main: string, accent: string) => void;
   courseWeights: Readonly<Record<string, number>>; setCourseWeight: (id: string, weight: number) => void;
+  /** Private, in-memory per-assignment values. Never edits the school grade. */
+  levelOverrides: Readonly<Record<string, LevelOverrides>>;
+  setLevelAssignmentGrade: (courseId: string, assessmentId: string, grade: number | null) => void;
   preferenceError: boolean; retryAt: number;
   privacyMode: boolean;
   setPrivacyMode: (enabled: boolean) => void;

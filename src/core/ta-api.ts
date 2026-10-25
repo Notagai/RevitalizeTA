@@ -1,3 +1,4 @@
+import { validLevel, type AchievementLevel } from './levels.ts';
 import { parseSnapshot, type Assessment, type Course, type Snapshot } from './model.ts';
 import { SyncError, type Adapter } from './sync.ts';
 
@@ -24,7 +25,7 @@ function date(value: unknown): string {
 }
 
 /** The public service wraps courses in { response }, unlike its docs' array example. */
-export function normalizeTAResponse(value: unknown, checkedAt = new Date().toISOString()): Snapshot {
+export function normalizeTAResponse(value: unknown, checkedAt = new Date().toISOString(), source: 'ta-api' | 'teachassist' = 'ta-api'): Snapshot {
   const courses = Array.isArray(value) ? value : record(value).response;
   if (!Array.isArray(courses) || courses.length > 40) return invalid();
   const normalized = courses.map((value): Course => {
@@ -40,7 +41,9 @@ export function normalizeTAResponse(value: unknown, checkedAt = new Date().toISO
     const weights: Course['categories'] = categoryIds.filter(key => table[key] !== undefined).map(key => {
       const entry = record(table[key]);
       return { id: key, name: categories[key], weight: numeric(entry.CW, 100),
-        reportedAverage: entry.SA === null || entry.SA === 'N/A' ? null : numeric(entry.SA, 100) };
+        reportedAverage: entry.SA === null || entry.SA === 'N/A' ? null : numeric(entry.SA, 100),
+        ...(entry.reportedLevel === undefined ? {} : {
+          reportedLevel: source === 'teachassist' && validLevel(entry.reportedLevel) ? entry.reportedLevel : invalid() }) };
     });
     const names = new Map<string, number>();
     const assessments: Assessment[] = [];
@@ -60,23 +63,35 @@ export function normalizeTAResponse(value: unknown, checkedAt = new Date().toISO
           const part = record(value);
           if (typeof part.finished !== 'boolean') return invalid();
           const possible = numeric(part.total), weight = numeric(part.weight);
+          const level: AchievementLevel | undefined = part.level === undefined ? undefined :
+            source === 'teachassist' && validLevel(part.level) ? part.level : invalid();
           const earned = part.get === null ? null : numeric(part.get, possible);
-          const status: Assessment['status'] = part.exempt === true ? 'exempt' : part.missing === true ? 'missing' : part.finished && earned !== null && possible > 0 ? 'graded' : 'ungraded';
+          if (level !== undefined && (earned !== null || possible !== 0)) return invalid();
+          const status: Assessment['status'] = part.exempt === true ? 'exempt' : part.missing === true ? 'missing' :
+            part.finished && ((earned !== null && possible > 0) || level !== undefined) ? 'graded' : 'ungraded';
           assessments.push({ id: `${assignmentId}:${category}:${index}`, assignmentId, name, category, possible, weight,
-            earned: status === 'graded' ? earned : null, status, ...(assignmentDate ? { date: assignmentDate } : {}) });
+            earned: status === 'graded' ? earned : null, status,
+            ...(level === undefined ? {} : { level }), ...(assignmentDate ? { date: assignmentDate } : {}) });
           parts++;
         }
       }
       if (!parts) return invalid();
     }
+    const reportProblem = raw.reportProblem;
+    if (reportProblem !== undefined && (source !== 'teachassist'
+      || !['report-cell', 'report-assignment', 'report-weighting', 'report-layout', 'report-normalization'].includes(reportProblem as string)
+      || weights.length > 0 || assessments.length > 0)) return invalid();
     return { id, code, name: label(raw.name), term: `Semester ${semester}`, semester, ...(period ? { period } : {}),
+      ...(reportProblem === undefined ? {} : { reportProblem: reportProblem as Course['reportProblem'] }),
       ...(raw.room && raw.room !== 'Unknown Room' && raw.room !== 'N/A' ? { room: label(raw.room) } : {}),
       ...(raw.teacher ? { teacher: label(raw.teacher) } : {}),
       ...(raw.credit === undefined ? {} : { credit: numeric(raw.credit, 10) }),
       reportedAverage: raw.overall_mark === 'N/A' || raw.overall_mark === null ? null : numeric(raw.overall_mark, 100),
+      ...(raw.overall_level === undefined ? {} : {
+        reportedLevel: source === 'teachassist' && validLevel(raw.overall_level) ? raw.overall_level : invalid() }),
       categories: weights, assessments };
   });
-  return parseSnapshot({ version: 2, source: 'ta-api', checkedAt, courses: normalized });
+  return parseSnapshot({ version: source === 'teachassist' ? 3 : 2, source, checkedAt, courses: normalized });
 }
 
 export function validCredentials(value: Credentials): boolean {
