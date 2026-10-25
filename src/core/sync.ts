@@ -30,15 +30,19 @@ export function diffSnapshots(before: Snapshot | null, after: Snapshot): Change[
   for (const course of after.courses) {
     const old = before.courses.find(c => c.id === course.id);
     if (!old) { changes.push({ courseId: course.id, description: 'Course added' }); continue; }
-    const { assessments: oldAssessments, ...oldDetails } = old;
-    const { assessments, ...details } = course;
+    const { assessments: oldAssessments, reportProblem: oldProblem, ...oldDetails } = old;
+    const { assessments, reportProblem: newProblem, ...details } = course;
     const normalize = (value: typeof details) => ({ ...value, categories: [...value.categories].sort((a, b) => a.id.localeCompare(b.id)) });
     if (stable(normalize(oldDetails)) !== stable(normalize(details))) changes.push({ courseId: course.id, description: 'Course details, reported average or category weights changed' });
-    for (const a of assessments) {
-      const previous = oldAssessments.find(item => item.id === a.id);
-      if (!previous || stable(previous) !== stable(a)) changes.push({ courseId: course.id, description: previous ? 'Assessment changed' : 'Assessment added' });
+    // An unsupported report is incomplete, NOT proof that assignments were deleted.
+    // Neither entering nor recovering from a partial import yields fabricated changes.
+    if (!oldProblem && !newProblem) {
+      for (const a of assessments) {
+        const previous = oldAssessments.find(item => item.id === a.id);
+        if (!previous || stable(previous) !== stable(a)) changes.push({ courseId: course.id, description: previous ? 'Assessment changed' : 'Assessment added' });
+      }
+      for (const a of oldAssessments) if (!assessments.some(item => item.id === a.id)) changes.push({ courseId: course.id, description: 'Assessment removed' });
     }
-    for (const a of oldAssessments) if (!assessments.some(item => item.id === a.id)) changes.push({ courseId: course.id, description: 'Assessment removed' });
   }
   for (const c of before.courses) if (!after.courses.some(item => item.id === c.id)) changes.push({ courseId: c.id, description: 'Course removed' });
   return changes;
