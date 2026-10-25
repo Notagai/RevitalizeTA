@@ -67,3 +67,38 @@ test('privacy mode persists independently and rejects corrupt settings', async (
   entries.set('privacy-mode.json', '{"unexpected":"value"}');
   await assert.rejects(new Preferences(storage).loadPrivacyMode());
 });
+
+test('rapid privacy toggles persist the latest choice even with delayed writes', async () => {
+  let saved = null;
+  const storage = {
+    read: async () => saved,
+    write: async (_key, value) => {
+      await new Promise(resolve => setTimeout(resolve, value === 'true' ? 15 : 1));
+      saved = value;
+    },
+    remove: async () => {},
+  };
+  const preferences = new Preferences(storage);
+  await Promise.all([preferences.savePrivacyMode(true), preferences.savePrivacyMode(false)]);
+  assert.equal(await new Preferences(storage).loadPrivacyMode(), false);
+  await preferences.savePrivacyMode(true);
+  assert.equal(await new Preferences(storage).loadPrivacyMode(), true);
+});
+
+test('privacy settings recover when a prior write fails', async () => {
+  let saved = null, first = true;
+  const storage = {
+    read: async () => saved,
+    write: async (_key, value) => {
+      if (first) { first = false; throw new Error('synthetic disk failure'); }
+      saved = value;
+    },
+    remove: async () => {},
+  };
+  const preferences = new Preferences(storage);
+  const failed = preferences.savePrivacyMode(true);
+  const recovered = preferences.savePrivacyMode(false);
+  await assert.rejects(failed);
+  await recovered;
+  assert.equal(await preferences.loadPrivacyMode(), false);
+});
