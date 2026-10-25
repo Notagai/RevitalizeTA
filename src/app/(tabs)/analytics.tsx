@@ -1,7 +1,9 @@
 import { Link } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useApp } from '../../state/AppProvider';
-import { gradeBands, gradeSummary } from '../../core/grades';
+import { estimatedOverallAverage, gradeBands, gradeSummary } from '../../core/grades';
+import { estimatedCourseAverage } from '../../core/model';
+import { levelBandLabel, levelLabel } from '../../core/levels';
 import { percent, timestamp } from '../../core/presentation';
 import { Body, Card, Heading, Page } from '../../ui/components';
 import { Badge, GradeBar, Metric } from '../../ui/grade-visuals';
@@ -9,17 +11,19 @@ import { GradeReveal } from '../../ui/grade-reveal';
 import { useTheme } from '../../ui/theme';
 
 export default function Analytics() {
-  const { sync, privacyMode, isGradeVisible } = useApp();
+  const { sync, privacyMode, isGradeVisible, levelOverrides } = useApp();
   const { colors } = useTheme();
   const courses = sync.snapshot?.courses ?? [];
   const summary = gradeSummary(courses);
   const bands = gradeBands(courses);
+  const hasLevels = courses.some(c => c.reportedLevel || c.assessments.some(a => a.level));
+  const overall = hasLevels ? estimatedOverallAverage(courses, levelOverrides) : summary.average;
   const allVisible = courses.every(course => isGradeVisible(course.id));
   const overallVisible = isGradeVisible('overall');
   return <Page><Heading>Analytics</Heading>
     {!courses.length ? <Card><Body muted>No grades available yet.</Body><Link href="/" style={[styles.link, { color: colors.accent }]}>Dashboard</Link></Card> : <>
       <View style={styles.metrics}>
-        <Metric value={!overallVisible ? 'Hidden' : summary.average === null ? '—' : percent(summary.average)} label="Overall average" />
+        <Metric value={!overallVisible ? 'Hidden' : overall === null ? '—' : (hasLevels ? '~' : '') + percent(overall)} label={hasLevels ? 'Estimated overall average' : 'Overall average'} />
         <Metric value={!allVisible ? 'Hidden' : summary.pending} label="Awaiting marks" />
       </View>
       <GradeReveal id="overall" label="Show overall grades" />
@@ -27,15 +31,17 @@ export default function Analytics() {
         {courses.map(course => <View key={course.id} style={{ gap: 5 }}>
           <Link href={{ pathname: '/course/[id]', params: { id: course.id } }} asChild>
             <Pressable style={styles.chartLink} accessibilityRole="link"
-              accessibilityLabel={`${course.name}: ${isGradeVisible(course.id) ? percent(course.reportedAverage) : 'grades hidden'}. Open course.`}>
+              accessibilityLabel={`${course.name}: ${isGradeVisible(course.id) ? (course.reportedLevel ? levelLabel(course.reportedLevel) : percent(course.reportedAverage)) : 'grades hidden'}. Open course.`}>
               <View style={{ gap: 10, width: '100%' }}>
                 <View style={styles.row}>
                   <Text style={{ color: colors.text, fontWeight: '600', fontSize: 14 }}>{course.code}</Text>
                   <Text style={{ color: colors.accent, fontWeight: '700', fontSize: 17 }}>
-                    {isGradeVisible(course.id) ? percent(course.reportedAverage) : 'Hidden'}
+                    {isGradeVisible(course.id) ? (course.reportedLevel ? levelLabel(course.reportedLevel) : percent(course.reportedAverage)) : 'Hidden'}
                   </Text>
                 </View>
-                {isGradeVisible(course.id) ? <GradeBar value={course.reportedAverage} label={course.name} /> : null}
+                {isGradeVisible(course.id) && course.reportedLevel ? <Text style={{ color: colors.muted, fontSize: 12 }}>
+                  Official range {levelBandLabel(course.reportedLevel)} · ~{percent(estimatedCourseAverage(course, levelOverrides[course.id]))} estimate
+                </Text> : isGradeVisible(course.id) ? <GradeBar value={course.reportedAverage} label={course.name} /> : null}
               </View>
             </Pressable>
           </Link>
@@ -44,6 +50,7 @@ export default function Analytics() {
       </Card>
       {allVisible ? <>
         <Card><Heading>Grade distribution</Heading>
+          {hasLevels ? <Body muted>Distribution and rankings use published percentages only. Level grades are excluded.</Body> : null}
           {bands.map(band => <View key={band.label} accessible accessibilityLabel={`${band.label}: ${band.count} courses`} style={styles.bandRow}>
             <Text style={{ color: colors.muted, fontSize: 12, width: 78 }}>{band.label}</Text>
             <View style={{ flex: 1, height: 22, borderRadius: 6, overflow: 'hidden', backgroundColor: colors.track }}>
